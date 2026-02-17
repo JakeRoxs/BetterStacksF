@@ -1,4 +1,5 @@
 using BetterStacks;
+using BetterStacks.Config;
 
 namespace BetterStacks.Networking
 {

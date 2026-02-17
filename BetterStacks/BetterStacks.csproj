@@ -47,9 +47,7 @@
     </Reference>
   </ItemGroup>
 
-  <ItemGroup>
-    <ProjectReference Include="..\..\S1API\S1API\S1API.csproj" />
-  </ItemGroup>
+
   <PropertyGroup>
     <SteamNetworkLibHintPath Condition="Exists('$(MelonLoaderPath)\..\\UserLibs\\SteamNetworkLib-IL2Cpp.dll')">$(MelonLoaderPath)\..\\UserLibs\\SteamNetworkLib-IL2Cpp.dll</SteamNetworkLibHintPath>
     <SteamNetworkLibHintPath Condition="'$(SteamNetworkLibHintPath)'=='' and Exists('..\\docs\\SteamNetworkLib-IL2Cpp.dll')">..\\docs\\SteamNetworkLib-IL2Cpp.dll</SteamNetworkLibHintPath>

@@ -1,4 +1,4 @@
-﻿using BetterStacks;
+using BetterStacks;
 using BetterStacks.Networking;
 using HarmonyLib;
 using MelonLoader;
@@ -15,7 +15,11 @@ using System.Reflection;
 using System.Reflection.Emit;
 using S1API.Lifecycle;
 using System.Linq;
+using System.Collections.Generic;
+using System;
 
+using BetterStacks.Config;
+using BetterStacks.Patches;
 
 [assembly: MelonInfo(typeof(BetterStacksMod), "Better Stacks", "0.0.1", "Zarnes")]
 [assembly: MelonGame("TVGS", "Schedule I")]
@@ -33,6 +37,9 @@ public class BetterStacksMod : MelonMod
 
     // Convenience: whether the loaded mod config requests server-authoritative behavior.
     public static bool ServerAuthoritativeEnabled => _config?.EnableServerAuthoritativeConfig ?? false;
+
+    // Expose current config for helpers/patches.
+    public static ModConfig CurrentConfig => _config;
 
     public override void OnInitializeMelon()
     {
@@ -74,16 +81,16 @@ public class BetterStacksMod : MelonMod
 
 
 
-        // Patch Mixing Station capacity
+        // Patch Mixing Station capacity — implementation moved to Patches/MixingStationPatches.cs
         harmony.Patch(
             AccessTools.Method(typeof(MixingStation), "Start"),
-            prefix: new HarmonyMethod(typeof(BetterStacksMod), nameof(PatchMixingStationCapacity))
+            prefix: new HarmonyMethod(typeof(MixingStationPatches), nameof(MixingStationPatches.PatchMixingStationCapacity))
         );
 
-        // Patch Drying Rack capacity
+        // Patch Drying Rack capacity — implementation moved to Patches/DryingRackPatches.cs
         harmony.Patch(
             AccessTools.Method(typeof(DryingRackCanvas), "SetIsOpen"),
-            prefix: new HarmonyMethod(typeof(BetterStacksMod), nameof(PatchDryingRackCapacity))
+            prefix: new HarmonyMethod(typeof(DryingRackPatches), nameof(DryingRackPatches.PatchDryingRackCapacity))
         );
 
         // Delivery stack limit handled by S1API.ApplyStackOverrides
@@ -92,15 +99,15 @@ public class BetterStacksMod : MelonMod
 
         harmony.Patch(
             AccessTools.Method(typeof(ItemUIManager), "UpdateCashDragAmount"),
-            transpiler: new HarmonyMethod(typeof(BetterStacksMod), nameof(TranspilerPatch))
+            transpiler: new HarmonyMethod(typeof(TranspilerPatches), nameof(TranspilerPatches.TranspilerPatch))
         );
         harmony.Patch(
             AccessTools.Method(typeof(ItemUIManager), "StartDragCash"),
-            transpiler: new HarmonyMethod(typeof(BetterStacksMod), nameof(TranspilerPatch))
+            transpiler: new HarmonyMethod(typeof(TranspilerPatches), nameof(TranspilerPatches.TranspilerPatch))
         );
         harmony.Patch(
             AccessTools.Method(typeof(ItemUIManager), "EndCashDrag"),
-            transpiler: new HarmonyMethod(typeof(BetterStacksMod), nameof(TranspilerPatch))
+            transpiler: new HarmonyMethod(typeof(TranspilerPatches), nameof(TranspilerPatches.TranspilerPatch))
         );
 
     }
@@ -132,15 +139,6 @@ public class BetterStacksMod : MelonMod
         {
             cfg.CategoryMultipliers = new Dictionary<string, int>();
             changed = true;
-        }
-
-        void AddIfMissing(string key, int val)
-        {
-            if (!cfg.CategoryMultipliers.ContainsKey(key))
-            {
-                cfg.CategoryMultipliers[key] = val;
-                changed = true;
-            }
         }
 
         if (addEnumKeys)
@@ -231,8 +229,13 @@ public class BetterStacksMod : MelonMod
                 {
                     if (stackProp != null)
                         currentStack = Convert.ToInt32(stackProp.GetValue(def));
-                    else
+                    else if (stackField != null)
                         currentStack = Convert.ToInt32(stackField.GetValue(def));
+                    else
+                    {
+                        // defensive: nothing to read
+                        continue;
+                    }
                 }
                 catch
                 {
@@ -252,7 +255,7 @@ public class BetterStacksMod : MelonMod
                 var key = category.ToString();
                 if (cfg.CategoryMultipliers != null && cfg.CategoryMultipliers.TryGetValue(key, out var m))
                     modifier = Math.Max(1, m);
-                else if (_config?.CategoryMultipliers != null && _config.CategoryMultipliers.TryGetValue(key, out var m2))
+                else if (_config != null && _config.CategoryMultipliers != null && _config.CategoryMultipliers.TryGetValue(key, out var m2))
                     modifier = Math.Max(1, m2);
 
                 int newLimit = Math.Max(1, originalLimit * modifier);
@@ -357,85 +360,13 @@ public class BetterStacksMod : MelonMod
         return false;
     }
 
-    public static bool PatchMixingStationCapacity(MixingStation __instance)
-    {
-        __instance.MixTimePerItem /= _config.MixingStationSpeed;
-        __instance.MixTimePerItem = Math.Max(1, __instance.MixTimePerItem);
-        __instance.MaxMixQuantity = __instance.MaxMixQuantity * _config.MixingStationCapacity;
-        //MelonLogger.Msg($"Set mixing station capacity to {__instance.MaxMixQuantity}");
-        return true;
-    }
-
-    public static void PatchDryingRackCapacity(DryingRackCanvas __instance, DryingRack rack, bool open)
-    {
-        //MelonLogger.Msg($"On DryingRackCanvas.SetIsOpen");
-        if (rack is not null)
-        {
-            int desired = _config.DryingRackCapacity * 20;
-            if (rack.ItemCapacity != desired)
-            {
-                rack.ItemCapacity = desired;
-                //MelonLogger.Msg($"Set drying rack capacity to {rack.ItemCapacity}");
-            }
-        }
-    }
-
-    //public static bool DeliveryLimitPatch(DeliveryShop __instance)
-    //{
-    //    int totalStacks = 0;
-    //    foreach (ListingEntry? listingEntry in __instance.listingEntries._items)
-    //    {
-    //        if (listingEntry is null || listingEntry.SelectedQuantity == 0)
-    //            continue;
-
-    //        StorableItemDefinition item = listingEntry.MatchingListing.Item;
-    //        int stackCapacity = item.StackLimit * GetCapacityModifier(item.Category);
-    //        int stacksNeeded = (int) Math.Ceiling((double)listingEntry.SelectedQuantity / stackCapacity);
-    //        totalStacks += stacksNeeded;
-    //    }
-
-    //    MelonLogger.Msg($"Order need {totalStacks} stacks");
-    //    return totalStacks <= DeliveryShop.DELIVERY_VEHICLE_SLOT_CAPACITY;
-    //}
-
-    // ListingEntry stack-limit patch removed — handled by S1API.ApplyStackOverrides
     private static int GetCapacityModifier(EItemCategory category)
     {
         var key = category.ToString();
-        if (_config?.CategoryMultipliers != null && _config.CategoryMultipliers.TryGetValue(key, out var val))
+        if (_config != null && _config.CategoryMultipliers != null && _config.CategoryMultipliers.TryGetValue(key, out var val))
             return Math.Max(1, val);
 
         return 1;
     }
 
-    static IEnumerable<CodeInstruction> TranspilerPatch(IEnumerable<CodeInstruction> instructions)
-    {
-        MelonLogger.Msg("[Better Stacks] Transpiler called");
-        foreach (CodeInstruction instruction in instructions)
-        {
-            MelonLogger.Msg($"Opcode: {instruction.opcode}, Operand: {instruction.operand}");
-            if (instruction.opcode == OpCodes.Ldc_R4 && (float)instruction.operand == 1000f)
-                yield return new CodeInstruction(OpCodes.Ldc_R4, (float)5000);
-            else
-                yield return instruction;
-        }
-    }
-
-
-}
-
-
-
-public class ModConfig
-{
-    // Primary dynamic category multipliers keyed by EItemCategory name.
-    public Dictionary<string, int> CategoryMultipliers { get; set; } = new Dictionary<string, int>();
-
-    // When true the host may assert authoritative control over this mod's config via HostConfig messages.
-    public bool EnableServerAuthoritativeConfig { get; set; } = false;
-
-    public int MixingStationCapacity { get; set; } = 1;
-    public int MixingStationSpeed { get; set; } = 3;
-
-    public int DryingRackCapacity { get; set; } = 1;
 }

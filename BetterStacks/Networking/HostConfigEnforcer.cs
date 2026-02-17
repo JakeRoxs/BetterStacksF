@@ -1,4 +1,5 @@
 using MelonLoader;
+using BetterStacks.Config;
 
 namespace BetterStacks.Networking
 {

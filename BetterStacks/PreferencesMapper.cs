@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using MelonLoader;
 using Il2CppScheduleOne.ItemFramework;
 using BetterStacks.Networking;
+using BetterStacks.Config;
 
 namespace BetterStacks
 {
@@ -10,7 +11,7 @@ namespace BetterStacks
     {
         private const string CategoryId = "BetterStacks";
         private static MelonPreferences_Category? _category;
-        private static bool _suppressPreferenceEvents = false;
+        // _suppressPreferenceEvents removed — suppression flag is no longer used.
 
         private static MelonPreferences_Entry<bool>? _enableServerAuthoritative;
         private static MelonPreferences_Entry<int>? _mixingStationCapacity;
@@ -27,7 +28,7 @@ namespace BetterStacks
         public static void EnsureRegistered()
         {
             if (_category != null) return;
-            _suppressPreferenceEvents = true; // prevent handlers firing during registration
+            // suppression not required during registration (previous _suppressPreferenceEvents removed) 
             _category = MelonPreferences.CreateCategory(CategoryId);
 
             var defaults = new ModConfig();
@@ -49,7 +50,7 @@ namespace BetterStacks
             // Use polling (checked from OnUpdate) instead of direct MelonPreferences event subscription.
             // Initialize last-applied snapshot so we can detect and revert unauthorized client edits.
             _lastAppliedPrefs = ReadFromPreferences();
-            _suppressPreferenceEvents = false;
+            // suppression flag removed — no-op
         }
 
         // No-op handler placeholder kept for compatibility with older Melon APIs; polling is used instead.
@@ -78,7 +79,7 @@ namespace BetterStacks
                 if (IsClientInMultiplayer())
                 {
                     // Revert preference values to last applied snapshot (do not call WriteToPreferences since clients are blocked from writing).
-                    _suppressPreferenceEvents = true;
+                    // suppression flag removed — no-op
                     try
                     {
                         // restore scalar entries
@@ -99,7 +100,7 @@ namespace BetterStacks
                     }
                     finally
                     {
-                        _suppressPreferenceEvents = false;
+                        // suppression flag removed — no-op
                     }
                     MelonLogger.Msg("[Better Stacks] Preference changes from client reverted; only host may edit preferences while connected.");
                     return;
@@ -162,7 +163,7 @@ namespace BetterStacks
             }
 
             EnsureRegistered();
-            _suppressPreferenceEvents = true;
+            // suppression flag removed — no-op
             try
             {
                 _enableServerAuthoritative!.Value = cfg.EnableServerAuthoritativeConfig;
@@ -181,7 +182,7 @@ namespace BetterStacks
             }
             finally
             {
-                _suppressPreferenceEvents = false;
+                // suppression flag removed — no-op
             }
 
             MelonPreferences.Save();
