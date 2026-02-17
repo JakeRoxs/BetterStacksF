@@ -11,39 +11,61 @@
     <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
   </ItemGroup>
 
+  <PropertyGroup>
+    <!-- MelonLoaderPath can be overridden in Directory.Build.props or with an environment variable named MelonLoaderPath -->
+    <MelonLoaderPath Condition="'$(MelonLoaderPath)'==''">D:\Games\Steam\steamapps\common\Schedule I\MelonLoader</MelonLoaderPath>
+    <MelonLoaderNetPath>$(MelonLoaderPath)\net6</MelonLoaderNetPath>
+    <MelonLoaderIl2CppPath>$(MelonLoaderPath)\Il2CppAssemblies</MelonLoaderIl2CppPath>
+  </PropertyGroup>
+
   <ItemGroup>
     <Reference Include="Assembly-CSharp">
-      <HintPath>D:\Games\Steam\steamapps\common\Schedule I\MelonLoader\Il2CppAssemblies\Assembly-CSharp.dll</HintPath>
+      <HintPath>$(MelonLoaderIl2CppPath)\Assembly-CSharp.dll</HintPath>
     </Reference>
     <Reference Include="Il2CppInterop.Common">
-      <HintPath>D:\Games\Steam\steamapps\common\Schedule I\MelonLoader\net6\Il2CppInterop.Common.dll</HintPath>
+      <HintPath>$(MelonLoaderNetPath)\Il2CppInterop.Common.dll</HintPath>
     </Reference>
     <Reference Include="Il2CppInterop.Runtime">
-      <HintPath>D:\Games\Steam\steamapps\common\Schedule I\MelonLoader\net6\Il2CppInterop.Runtime.dll</HintPath>
+      <HintPath>$(MelonLoaderNetPath)\Il2CppInterop.Runtime.dll</HintPath>
     </Reference>
     <Reference Include="Il2Cppmscorlib">
-      <HintPath>D:\Games\Steam\steamapps\common\Schedule I\MelonLoader\Il2CppAssemblies\Il2Cppmscorlib.dll</HintPath>
+      <HintPath>$(MelonLoaderIl2CppPath)\Il2Cppmscorlib.dll</HintPath>
     </Reference>
     <Reference Include="MelonLoader">
-      <HintPath>D:\Games\Steam\steamapps\common\Schedule I\MelonLoader\net6\MelonLoader.dll</HintPath>
+      <HintPath>$(MelonLoaderNetPath)\MelonLoader.dll</HintPath>
     </Reference>
     <Reference Include="UnityEngine.CoreModule">
-      <HintPath>D:\Games\Steam\steamapps\common\Schedule I\MelonLoader\Il2CppAssemblies\UnityEngine.CoreModule.dll</HintPath>
+      <HintPath>$(MelonLoaderIl2CppPath)\UnityEngine.CoreModule.dll</HintPath>
     </Reference>
     <Reference Include="UnityEngine.IMGUIModule">
-      <HintPath>D:\Games\Steam\steamapps\common\Schedule I\MelonLoader\Il2CppAssemblies\UnityEngine.IMGUIModule.dll</HintPath>
+      <HintPath>$(MelonLoaderIl2CppPath)\UnityEngine.IMGUIModule.dll</HintPath>
+    </Reference>
+
+    <!-- Reference S1API from the local game install (fallback via MelonLoaderPath -> ..\mods) -->
+    <Reference Include="S1API" Condition="Exists('$(MelonLoaderPath)\..\\mods\\S1API.Il2Cpp.MelonLoader.dll')">
+      <HintPath>$(MelonLoaderPath)\..\\mods\\S1API.Il2Cpp.MelonLoader.dll</HintPath>
     </Reference>
   </ItemGroup>
 
-	<ItemGroup>
-		<None Update="BetterStackConfig.json">
-			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-			<CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
-		</None>
-	</ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\S1API\S1API\S1API.csproj" />
+  </ItemGroup>
+  <PropertyGroup>
+    <SteamNetworkLibHintPath Condition="Exists('$(MelonLoaderPath)\..\\UserLibs\\SteamNetworkLib-IL2Cpp.dll')">$(MelonLoaderPath)\..\\UserLibs\\SteamNetworkLib-IL2Cpp.dll</SteamNetworkLibHintPath>
+    <SteamNetworkLibHintPath Condition="'$(SteamNetworkLibHintPath)'=='' and Exists('..\\docs\\SteamNetworkLib-IL2Cpp.dll')">..\\docs\\SteamNetworkLib-IL2Cpp.dll</SteamNetworkLibHintPath>
+  </PropertyGroup>
 
-	<Target Name="CopyJsonToObj" AfterTargets="Build">
-		<Copy SourceFiles="BetterStackConfig.json" DestinationFolder="$(IntermediateOutputPath)" />
-	</Target>
+  <Target Name="EnsureSteamNetworkLibPresent" BeforeTargets="Build">
+    <Error Text="SteamNetworkLib-IL2Cpp.dll not found. Place it in $(MelonLoaderPath)\..\UserLibs or add ..\docs\SteamNetworkLib-IL2Cpp.dll to the repo." Condition="'$(SteamNetworkLibHintPath)'==''" />
+  </Target>
+
+  <ItemGroup>
+    <Reference Include="SteamNetworkLib">
+      <HintPath>$(SteamNetworkLibHintPath)</HintPath>
+      <Private>True</Private>
+    </Reference>
+  </ItemGroup>
+
+	<!-- Configuration moved to MelonPreferences; `BetterStacksConfig.json` retained only as a reference/example in the repo. -->
 
 </Project>

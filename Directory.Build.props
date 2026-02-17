@@ -1,0 +1,7 @@
+<Project>
+  <PropertyGroup>
+    <!-- Set your local MelonLoader path here (overrides the csproj default). -->
+    <!-- Replace the path below with your actual install location. -->
+    <MelonLoaderPath>I:\SteamLibrary\steamapps\common\Schedule I\MelonLoader</MelonLoaderPath>
+  </PropertyGroup>
+</Project>

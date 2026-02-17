@@ -1,0 +1,10 @@
+{
+  "name": "BetterStacks",
+  "version_number": "0.0.1",
+  "website_url": "https://github.com/Zarnes/BetterStacks",
+  "description": "Increases stack sizes and capacities for Schedule I items and stations.",
+  "dependencies": [
+    "S1API",
+    "MelonLoader-0.7.0"
+  ]
+}
