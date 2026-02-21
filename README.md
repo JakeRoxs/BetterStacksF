@@ -1,6 +1,16 @@
-# BetterStacks Mod
+# BetterStacksF Schedule I Mod
 
-This repo contains the source code for the BetterStacks melonloader mod.
+This repo contains the source code for the BetterStacksF melonloader mod.
+
+It’s basically the same idea as before, just smarter, more flexible, and more multiplayer-safe.
+
+- Stack sizes can be adjusted for every category individually.
+- In multiplayer the host sends the settings to everyone else, so all players share the same rules.
+- The mod remembers the original values so it never multiplies the same stack twice.
+- You can edit the config file or use in-game preference adjustments via ModsApp.
+- The code is organised into separate pieces (config, networking, patches) to keep it easier to work on.
+
+---
 
 ## Local Build Configuration
 
