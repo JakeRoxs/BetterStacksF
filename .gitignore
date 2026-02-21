@@ -374,6 +374,6 @@ tools/
 
 # Ignore Docs
 docs/
-.github/skills/*
+.github/skills/
 copilot-instructions.md
 AGENTS.md
