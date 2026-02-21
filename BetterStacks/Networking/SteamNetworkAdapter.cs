@@ -13,8 +13,23 @@ namespace BetterStacks.Networking
         private SteamNetworkClient? _client;
         private string? _lastLobbyHostConfigValue;
 
+        // Deferred initialization helpers — Steam may not be ready at OnInitializeMelon time.
+        private bool _deferredInit = false;
+        private bool _deferredInitLogged = false;
+        private DateTime _nextInitAttempt = DateTime.MinValue;
+        private static readonly TimeSpan InitRetryInterval = TimeSpan.FromSeconds(5);
+
         public bool IsHost => _client?.IsHost ?? false;
         public bool IsInitialized { get; private set; } = false;
+
+        // Expose whether the underlying SteamNetworkClient is currently in a lobby/session.
+        public bool IsInLobby => _client?.IsInLobby ?? false;
+
+        // How many members are in the current lobby (0 if not in a lobby).
+        public int LobbyMemberCount => _client?.CurrentLobby?.MemberCount ?? 0;
+
+        // True when initialization is deferred because Steam wasn't ready at first attempt.
+        public bool InitializationDeferred => _deferredInit;
 
         public event Action<HostConfig>? OnHostConfigReceived;
 
@@ -22,26 +37,47 @@ namespace BetterStacks.Networking
         {
             try
             {
-                _client = new SteamNetworkClient();
-                try
+                // Always defer actual SteamNetworkClient construction to the per-frame processing loop.
+                // Calling into Steamworks synchronously during mod initialization can race and throw
+                // "Steamworks is not initialized" even when SteamNetworkUtils reports available.
+                // ProcessIncomingMessages will perform the real TryInitClient() with backoff when Steam is ready.
+                _deferredInit = true;
+                _nextInitAttempt = DateTime.UtcNow; // allow the loop to attempt init immediately when ready
+                if (!_deferredInitLogged)
                 {
-                    _client.Initialize();
-                    IsInitialized = true;
-                    MelonLogger.Msg("[Better Stacks][SteamNetworkAdapter] typed adapter initialized");
+                    MelonLogger.Msg("[SteamNetworkAdapter] Initialization deferred — will attempt to initialize when Steam is ready (processed in the update loop).");
+                    _deferredInitLogged = true;
                 }
-                catch (Exception initEx)
-                {
-                    MelonLogger.Warning($"[Better Stacks][SteamNetworkAdapter] Initialize failed: {initEx.Message}");
-                    try { _client.Dispose(); } catch { }
-                    _client = null;
-                    IsInitialized = false;
-                }
+                return;
             }
             catch (Exception ex)
             {
-                MelonLogger.Warning($"[Better Stacks][SteamNetworkAdapter] Initialize failed: {ex.Message}");
+                MelonLogger.Warning($"[SteamNetworkAdapter] Initialize failed: {ex.Message}");
                 _client = null;
                 IsInitialized = false;
+            }
+        }
+
+        private void TryInitClient()
+        {
+            try
+            {
+                _client = new SteamNetworkClient();
+                _client.Initialize();
+                IsInitialized = true;
+                _deferredInit = false;
+                MelonLogger.Msg("[SteamNetworkAdapter] typed adapter initialized");
+            }
+            catch (Exception initEx)
+            {
+                MelonLogger.Warning($"[SteamNetworkAdapter] Initialize failed: {initEx.Message}");
+                try { _client?.Dispose(); } catch { }
+                _client = null;
+                IsInitialized = false;
+                // Mark as deferred so ProcessIncomingMessages will retry with backoff instead of failing permanently.
+                _deferredInit = true;
+                // Back off before next attempt to avoid spamming the log.
+                _nextInitAttempt = DateTime.UtcNow + InitRetryInterval;
             }
         }
 
@@ -50,18 +86,37 @@ namespace BetterStacks.Networking
             try { _client?.Dispose(); } catch { }
             _client = null;
             IsInitialized = false;
+            _deferredInit = false;
+            _deferredInitLogged = false;
+            _nextInitAttempt = DateTime.MinValue;
         }
 
         public void ProcessIncomingMessages()
         {
-            // Avoid calling into SteamNetworkClient unless it was initialized successfully.
-            if (!IsInitialized || _client == null) return;
+            // If initialization was deferred because Steam wasn't ready, attempt it again (with backoff).
+            if (!IsInitialized)
+            {
+                if (_deferredInit && SteamNetworkLib.Utilities.SteamNetworkUtils.IsSteamInitialized() && DateTime.UtcNow >= _nextInitAttempt)
+                    TryInitClient();
+
+                // Nothing to process until the client is initialized.
+                if (!IsInitialized || _client == null) return;
+            }
+
+            // Capture a local copy so flow analysis can prove non-nullability.
+            var client = _client;
+            if (client == null) // defensive but should never hit
+                return;
 
             try
             {
-                _client.ProcessIncomingMessages();
+                client.ProcessIncomingMessages();
 
-                var value = _client.GetLobbyData("BetterStacks_HostConfig");
+                // If we're not in a Steam lobby, skip lobby-data handling — the game often doesn't
+                // initialize lobby networking until the player actively creates/joins a lobby.
+                if (!client.IsInLobby) return;
+
+                var value = client.GetLobbyData("BetterStacks_HostConfig");
                 if (value != _lastLobbyHostConfigValue)
                 {
                     _lastLobbyHostConfigValue = value;
@@ -74,7 +129,7 @@ namespace BetterStacks.Networking
                         }
                         catch (Exception ex)
                         {
-                            MelonLogger.Warning($"[Better Stacks][SteamNetworkAdapter] HostConfig deserialize failed: {ex.Message}");
+                            MelonLogger.Warning($"[SteamNetworkAdapter] HostConfig deserialize failed: {ex.Message}");
                         }
                     }
                 }
@@ -83,7 +138,7 @@ namespace BetterStacks.Networking
             {
                 // Mark the adapter as not initialized to prevent log spam and repeated failures.
                 IsInitialized = false;
-                MelonLogger.Warning($"[Better Stacks][SteamNetworkAdapter] ProcessIncomingMessages error: {ex.Message}");
+                MelonLogger.Warning($"[SteamNetworkAdapter] ProcessIncomingMessages error: {ex.Message}");
             }
         }
 
@@ -91,13 +146,13 @@ namespace BetterStacks.Networking
         {
             if (!IsHost)
             {
-                MelonLogger.Msg("[Better Stacks][SteamNetworkAdapter] BroadcastHostConfig ignored — not host");
+                MelonLogger.Msg("[SteamNetworkAdapter] BroadcastHostConfig ignored — not host");
                 return;
             }
 
             if (_client == null)
             {
-                MelonLogger.Warning("[Better Stacks][SteamNetworkAdapter] client not initialized");
+                MelonLogger.Warning("[SteamNetworkAdapter] client not initialized");
                 return;
             }
 
@@ -105,11 +160,11 @@ namespace BetterStacks.Networking
             {
                 var json = JsonConvert.SerializeObject(cfg ?? new HostConfig());
                 _client.SetLobbyData("BetterStacks_HostConfig", json);
-                MelonLogger.Msg("[Better Stacks][SteamNetworkAdapter] HostConfig set to lobby data");
+                MelonLogger.Msg("[SteamNetworkAdapter] HostConfig set to lobby data");
             }
             catch (Exception ex)
             {
-                MelonLogger.Warning($"[Better Stacks][SteamNetworkAdapter] BroadcastHostConfig failed: {ex.Message}");
+                MelonLogger.Warning($"[SteamNetworkAdapter] BroadcastHostConfig failed: {ex.Message}");
             }
         }
     }

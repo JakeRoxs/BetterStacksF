@@ -30,11 +30,14 @@ if (-not $projectFile) { Write-Error "Project file not found: $ProjectFile"; exi
 $projectDir = Split-Path -Parent $projectFile
 
 function Get-VersionFromSource {
-    $classFile = Join-Path $projectDir 'Class1.cs'
-    if (-not (Test-Path $classFile)) { return $null }
-    $content = Get-Content $classFile -Raw
-    $m = [regex]::Match($content, 'MelonInfo\([^)]*,\s*"[^"]*"\s*,\s*"(?<ver>[^"\)]+)"')
-    if ($m.Success) { return $m.Groups['ver'].Value }
+    # Search all C# source files for a MelonInfo attribute and return the version string (second quoted argument).
+    $csFiles = Get-ChildItem -Path $projectDir -Recurse -Filter *.cs -ErrorAction SilentlyContinue
+    foreach ($f in $csFiles) {
+        try { $content = Get-Content $f.FullName -Raw -ErrorAction SilentlyContinue } catch { continue }
+        # Match MelonInfo(..., "Display Name", "1.2.3", ...)
+        $m = [regex]::Match($content, 'MelonInfo\([^)]*"[^\"]*"\s*,\s*"(?<ver>[^\"]+)"')
+        if ($m.Success) { return $m.Groups['ver'].Value }
+    }
     return $null
 }
 

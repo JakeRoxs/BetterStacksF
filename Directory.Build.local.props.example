@@ -1,0 +1,8 @@
+<Project>
+  <PropertyGroup>
+    <!-- set to your Schedule I root directory and copy/rename to Directory.Build.local.props -->
+    <ScheduleRoot Condition="'$(ScheduleRoot)' == ''">
+      C:\Games\SteamLibrary\steamapps\common\Schedule I
+    </ScheduleRoot>
+  </PropertyGroup>
+</Project>

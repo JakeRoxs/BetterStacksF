@@ -1,7 +1,16 @@
 <Project>
+  <!--
+    Keep this file checked in as a template.  Your personal settings go in a
+    separate `Directory.Build.props.local` that is ignored by git.
+  -->
+
+  <!-- import user overrides if present -->
+  <Import Project="Directory.Build.local.props" Condition="Exists('Directory.Build.local.props')" />
+
   <PropertyGroup>
-    <!-- Set your local MelonLoader path here (overrides the csproj default). -->
-    <!-- Replace the path below with your actual install location. -->
-    <MelonLoaderPath>I:\SteamLibrary\steamapps\common\Schedule I\MelonLoader</MelonLoaderPath>
+    <!-- fallback in case no local file is provided (or if the import didn’t set
+         the property).  The condition prevents this hard‑coded value from
+         stomping over a value supplied by Directory.Build.local.props. -->
+    <ScheduleRoot Condition="'$(ScheduleRoot)'==''">YOUR_SCHEDULE_I_INSTALL_DIRECTORY</ScheduleRoot>
   </PropertyGroup>
 </Project>

@@ -12,12 +12,12 @@ namespace BetterStacks.Networking
                 return;
 
             // Update internal config and re-apply authoritative overrides.
-            BetterStacksMod.UpdateConfigFromHost(hostConfig.Config);
+            BetterStacksMod.EnqueueConfigUpdate(hostConfig.Config);
 
             // Toggle runtime flag so save/persistence logic knows host-authoritative state.
             BetterStacksMod.ServerAuthoritative = hostConfig.Config.EnableServerAuthoritativeConfig;
 
-            MelonLogger.Msg($"[Better Stacks] HostConfig applied; ServerAuthoritative={BetterStacksMod.ServerAuthoritative}");
+            MelonLogger.Msg($"HostConfig applied; ServerAuthoritative={BetterStacksMod.ServerAuthoritative}");
         }
 
         public static bool ShouldAllowPersist(ModConfig attempted)
