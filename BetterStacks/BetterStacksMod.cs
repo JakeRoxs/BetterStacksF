@@ -7,16 +7,12 @@ using Il2CppScheduleOne.ItemFramework;
 using Il2CppScheduleOne.ObjectScripts;
 using MelonLoader.Utils;
 using Newtonsoft.Json;
-using Il2CppScheduleOne.UI.Phone.Delivery;
-using Il2CppScheduleOne.UI.Stations;
-using Il2CppScheduleOne.UI.Shop;
-using Il2CppScheduleOne.UI.Items;
 using System.Reflection;
-using System.Reflection.Emit;
 using S1API.Lifecycle;
 using System.Linq;
 using System.Collections.Generic;
 using System;
+
 
 using BetterStacks.Config;
 using BetterStacks.Patches;
@@ -58,6 +54,95 @@ public class BetterStacksMod : MelonMod
                 builder.Append(c);
         }
         return builder.ToString();
+    }
+
+    // Reflection helpers for reading/writing StackLimit values on definitions.
+    /// <summary>
+    /// Attempts to read the <c>StackLimit</c> value from an item definition instance using reflection.
+    /// </summary>
+    /// <param name="def">
+    /// The item definition object whose <c>StackLimit</c> property or field should be inspected.
+    /// </param>
+    /// <param name="currentStack">
+    /// When this method returns <see langword="true"/>, contains the current stack limit value read from
+    /// the definition. When the method returns <see langword="false"/>, this value is set to <c>0</c>.
+    /// </param>
+    /// <returns>
+    /// <see langword="true"/> if a readable <c>StackLimit</c> property or field was found and converted
+    /// successfully; otherwise, <see langword="false"/>.
+    /// </returns>
+    /// <remarks>
+    /// Any reflection or conversion errors are caught internally; the method does not throw in these cases
+    /// and instead returns <see langword="false"/>.
+    /// </remarks>
+    private static bool TryGetStackLimit(object def, out int currentStack)
+    {
+        currentStack = 0;
+        var defType = def.GetType();
+        var prop = defType.GetProperty("StackLimit");
+        var field = prop == null ? defType.GetField("StackLimit") : null;
+        if ((prop == null || !prop.CanRead) && field == null)
+            return false;
+        try
+        {
+            if (prop != null)
+                currentStack = Convert.ToInt32(prop.GetValue(def));
+            else if (field != null)
+                currentStack = Convert.ToInt32(field.GetValue(def));
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static bool TrySetStackLimit(object def, int value)
+    {
+        var defType = def.GetType();
+        var prop = defType.GetProperty("StackLimit");
+        var field = prop == null ? defType.GetField("StackLimit") : null;
+        try
+        {
+            if (prop != null && prop.CanWrite)
+            {
+                prop.SetValue(def, value);
+                return true;
+            }
+            else if (field != null)
+            {
+                field.SetValue(def, value);
+                return true;
+            }
+        }
+        catch { }
+        return false;
+    }
+
+    // Compute multiplier for a category from the supplied config (falling back to the
+    // globally loaded config and logging missing defaults).
+    private static int GetModifierForCategory(ModConfig? cfg, EItemCategory category)
+    {
+        if (cfg?.CategoryMultipliers != null &&
+            cfg.CategoryMultipliers.TryGetValue(category.ToString(), out var m))
+            return Math.Max(1, m);
+
+        if (_config?.CategoryMultipliers != null &&
+            _config.CategoryMultipliers.TryGetValue(category.ToString(), out var m2))
+            return Math.Max(1, m2);
+
+        // warn if one of the baked-in defaults is missing
+        switch (category)
+        {
+            case EItemCategory.Product:
+            case EItemCategory.Packaging:
+            case EItemCategory.Agriculture:
+            case EItemCategory.Ingredient:
+                MelonLogger.Warning($"Expected default multiplier for category '{category}' not found in config/game defs.");
+                break;
+        }
+
+        return 1;
     }
 
     // Indicates whether the current instance is being constrained by a host/server-authoritative config.
@@ -114,11 +199,6 @@ public class BetterStacksMod : MelonMod
         var harmony = new HarmonyLib.Harmony("com.jakeroxs.betterstacks");
         FileLog.LogWriter = new StreamWriter("harmony.log") { AutoFlush = true };
 
-        var method = AccessTools.Method(typeof(ItemUIManager), "UpdateCashDragAmount");
-        method = AccessTools.Method(typeof(ItemUIManager), "StartDragCash");
-        method = AccessTools.Method(typeof(ItemUIManager), "EndCashDrag");
-
-
         // Use S1API lifecycle to apply stack overrides once at load time
         GameLifecycle.OnPreLoad += ApplyStackOverrides;
 
@@ -141,8 +221,10 @@ public class BetterStacksMod : MelonMod
         );
 
         // Patch Drying Rack capacity — implementation moved to Patches/DryingRackPatches.cs
+        // Use TypeByName to avoid compile-time dependency on the class (some builds lack the
+        // DryingRackCanvas type).  AccessTools.Method gracefully handles a null type.
         harmony.Patch(
-            AccessTools.Method(typeof(DryingRackCanvas), "SetIsOpen"),
+            AccessTools.Method(AccessTools.TypeByName("DryingRackCanvas"), "SetIsOpen"),
             prefix: new HarmonyMethod(typeof(DryingRackPatches), nameof(DryingRackPatches.PatchDryingRackCapacity))
         );
 
@@ -321,110 +403,51 @@ public class BetterStacksMod : MelonMod
                     || defType.Name.IndexOf("Effect", StringComparison.OrdinalIgnoreCase) >= 0)
                 {
 #if DEBUG
-                    // only log during debug builds; MelonLogger already prefixes the mod name
                     MelonLogger.Msg($"Skipping non-stackable effect definition: {SanitizeForLog(def.Name)} ({defType.Name})");
 #endif
                     continue;
                 }
 
-                var stackProp = defType.GetProperty("StackLimit");
-                var stackField = stackProp == null ? defType.GetField("StackLimit") : null;
-
-                // read current stack limit via reflection (support property or field)
-                if ((stackProp == null || !stackProp.CanRead) && stackField == null)
+                if (!TryGetStackLimit(def, out int currentStack))
                 {
-                    // nothing we can do for this definition
-                    continue;
-                }
-
-                int currentStack;
-                try
-                {
-                    if (stackProp != null)
-                        currentStack = Convert.ToInt32(stackProp.GetValue(def));
-                    else if (stackField != null)
-                        currentStack = Convert.ToInt32(stackField.GetValue(def));
-                    else
-                    {
-                        // defensive: nothing to read
-                        continue;
-                    }
-                }
-                catch
-                {
-                    // unexpected value/type — skip this definition
                     MelonLogger.Msg($"Skipping {SanitizeForLog(def.Name)} ({defType.Name}) — unable to read StackLimit");
                     continue;
                 }
 
-                // Ensure we persist and use the original (pre-mod) stack limit so modifiers are never compounded
-                // across restarts. Prefer a saved original (MelonPreferences) if present; otherwise persist the
-                // first-observed current value as the original.
+                // capture/restore original base value if needed
                 if (!_originalStackLimits.ContainsKey(def.ID))
                 {
                     var saved = PreferencesMapper.GetSavedOriginalStackLimit(def.ID);
                     if (saved.HasValue)
                     {
-                        // Use saved in-memory original (captured earlier in this session)
                         _originalStackLimits[def.ID] = saved.Value;
                     }
                     else if (!_originalsCaptured)
                     {
-                        // First run (OnPreLoad): capture & persist original base values for the save.
                         _originalStackLimits[def.ID] = currentStack;
                         PreferencesMapper.PersistOriginalStackLimit(def.ID, currentStack);
                         capturedThisRun = true;
-                        //MelonLogger.Msg($"[Better Stacks] Recorded original StackLimit for '{def.Name}' (ID={def.ID}) = {currentStack}");
                     }
                     else
                     {
-                        // Definition appeared after initial capture (likely created by a config/save change).
-                        // We used to skip these to avoid compounding a multiplier when the definition
-                        // showed up; however that meant new products (e.g. from mixing recipes)
-                        // would never be adjusted when the config changed.  Instead we now attempt
-                        // to calculate a sensible "original" value and rescale the stack limit by
-                        // the delta between the old and new modifier.
                         int prevMod = 1;
                         if (_lastCategoryModifiers.TryGetValue(category, out var pm))
                             prevMod = pm;
 
-                        // compute modifier for the current config (should have been recorded in
-                        // currentModifiers earlier in this loop iteration).
                         currentModifiers.TryGetValue(category, out var currentMod);
                         if (currentMod < 1) currentMod = 1;
 
                         if (prevMod != currentMod && prevMod > 0)
                         {
-                            // scale the existing stack by ratio of modifiers and write it back.
-                            // use double arithmetic to avoid integer truncation, then clamp to >=1.
                             int adjusted = Math.Max(1, (int)Math.Round(currentStack * ((double)currentMod / prevMod)));
-
-                            // log the adjustment so diagnostics show what's happening.
 #if DEBUG
                             MelonLogger.Msg($"Adjusted newly-created {SanitizeForLog(def.Name)} ({category}) stack limit from {currentStack} to {adjusted} " +
                                             $"(oldMod={prevMod}, newMod={currentMod})");
 #endif
-                            // write the adjusted value back to the item right now so later logic
-                            // (including persisting the original) sees the correct value.
-                            try
-                            {
-                                if (stackProp != null && stackProp.CanWrite)
-                                    stackProp.SetValue(def, adjusted);
-                                else if (stackField != null)
-                                    stackField.SetValue(def, adjusted);
-                            }
-                            catch { }
-
+                            TrySetStackLimit(def, adjusted);
                             currentStack = adjusted;
                         }
-                        else
-                        {
-                            // either the modifier hasn't changed or we have no history; treat the
-                            // current value as if it has already had the correct multiplier applied.
-                        }
 
-                        // now compute and persist a base/original value so future runs won't hit
-                        // this branch again.  original = (currentStack / currentMod) rounded down.
                         int orig = Math.Max(1, currentStack / currentMod);
                         _originalStackLimits[def.ID] = orig;
                         PreferencesMapper.PersistOriginalStackLimit(def.ID, orig);
@@ -437,29 +460,7 @@ public class BetterStacksMod : MelonMod
 
                 int originalLimit = _originalStackLimits[def.ID];
 
-                // Determine modifier using CategoryMultipliers (keyed by enum name). Fall back to defaults.
-                int modifier = 1;
-                var key = category.ToString();
-                var cfgCats = (cfg?.CategoryMultipliers) ?? new Dictionary<string,int>();
-                if (cfgCats.TryGetValue(key, out var m))
-                    modifier = Math.Max(1, m);
-                else
-                {
-                    var globalCats = _config?.CategoryMultipliers;
-                    if (globalCats != null && globalCats.TryGetValue(key, out var m2))
-                        modifier = Math.Max(1, m2);
-                    else
-                    {
-                        // If this category is one of our baked-in defaults but isn't present in the runtime config,
-                        // log it once to help detect enum/name changes in the game.
-                        if (key == "Product" || key == "Packaging" || key == "Agriculture" || key == "Ingredient")
-                            MelonLogger.Warning($"Expected default multiplier for category '{key}' not found in config/game defs.");
-                    }
-                }
-
-                // remember what multiplier we're using in case a later run encounters a definition that
-                // wasn't present during the original capture.  this allows us to calculate deltas when
-                // config changes rather than blindly skipping the new def.
+                int modifier = GetModifierForCategory(cfg, category);
                 if (!currentModifiers.ContainsKey(category))
                     currentModifiers[category] = modifier;
 
@@ -482,20 +483,8 @@ public class BetterStacksMod : MelonMod
                     MelonLogger.Msg($"Set {SanitizeForLog(def.Name)} ({def.Category}) stack limit from {currentStack} to {newLimit}");
 #endif
 
-                    // attempt to write back via property or field
-                    try
-                    {
-                        if (stackProp != null && stackProp.CanWrite)
-                            stackProp.SetValue(def, newLimit);
-                        else if (stackField != null)
-                            stackField.SetValue(def, newLimit);
-                        else
-                            MelonLogger.Msg($"Cannot set StackLimit on {SanitizeForLog(def.Name)} ({defType.Name}) — member is read-only.");
-                    }
-                    catch (Exception ex)
-                    {
-                        MelonLogger.Msg($"Failed to set StackLimit on {SanitizeForLog(def.Name)} ({defType.Name}): {ex.Message}");
-                    }
+                    if (!TrySetStackLimit(def, newLimit))
+                        MelonLogger.Msg($"Cannot set StackLimit on {SanitizeForLog(def.Name)} ({defType.Name}) — member is read-only.");
                 }
             }
 
@@ -627,14 +616,6 @@ public class BetterStacksMod : MelonMod
         return false; // skip original
     }
 
-    private static int GetCapacityModifier(EItemCategory category)
-    {
-        var key = category.ToString();
-        if (_config != null && _config.CategoryMultipliers != null && _config.CategoryMultipliers.TryGetValue(key, out var val))
-            return Math.Max(1, val);
-
-        return 1;
-    }
 
 
 }

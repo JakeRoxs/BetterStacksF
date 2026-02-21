@@ -8,7 +8,6 @@ using BetterStacks.Networking;
 using Newtonsoft.Json;
 using System.IO;
 using System.Security.Cryptography;
-using BetterStacks.Config;
 using S1API.Lifecycle;
 
 namespace BetterStacks.Config

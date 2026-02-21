@@ -1,4 +1,3 @@
-using MelonLoader;
 using BetterStacks;
 
 namespace BetterStacks.Patches
