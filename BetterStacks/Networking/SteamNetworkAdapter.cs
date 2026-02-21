@@ -1,6 +1,7 @@
 using System;
 using MelonLoader;
 using Newtonsoft.Json;
+using BetterStacks.Utilities;
 using SteamNetworkLib;
 
 namespace BetterStacks.Networking
@@ -45,14 +46,14 @@ namespace BetterStacks.Networking
                 _nextInitAttempt = DateTime.UtcNow; // allow the loop to attempt init immediately when ready
                 if (!_deferredInitLogged)
                 {
-                    MelonLogger.Msg("[SteamNetworkAdapter] Initialization deferred — will attempt to initialize when Steam is ready (processed in the update loop).");
+                    LoggingHelper.Msg("[SteamNetworkAdapter] Initialization deferred — will attempt to initialize when Steam is ready (processed in the update loop).");
                     _deferredInitLogged = true;
                 }
                 return;
             }
             catch (Exception ex)
             {
-                MelonLogger.Warning($"[SteamNetworkAdapter] Initialize failed: {ex.Message}");
+                LoggingHelper.Warning($"[SteamNetworkAdapter] Initialize failed: {ex.Message}");
                 _client = null;
                 IsInitialized = false;
             }
@@ -66,11 +67,11 @@ namespace BetterStacks.Networking
                 _client.Initialize();
                 IsInitialized = true;
                 _deferredInit = false;
-                MelonLogger.Msg("[SteamNetworkAdapter] typed adapter initialized");
+                LoggingHelper.Msg("[SteamNetworkAdapter] typed adapter initialized");
             }
             catch (Exception initEx)
             {
-                MelonLogger.Warning($"[SteamNetworkAdapter] Initialize failed: {initEx.Message}");
+                LoggingHelper.Warning($"[SteamNetworkAdapter] Initialize failed: {initEx.Message}");
                 try { _client?.Dispose(); } catch { }
                 _client = null;
                 IsInitialized = false;
@@ -129,7 +130,7 @@ namespace BetterStacks.Networking
                         }
                         catch (Exception ex)
                         {
-                            MelonLogger.Warning($"[SteamNetworkAdapter] HostConfig deserialize failed: {ex.Message}");
+                            LoggingHelper.Warning($"[SteamNetworkAdapter] HostConfig deserialize failed: {ex.Message}");
                         }
                     }
                 }
@@ -138,7 +139,7 @@ namespace BetterStacks.Networking
             {
                 // Mark the adapter as not initialized to prevent log spam and repeated failures.
                 IsInitialized = false;
-                MelonLogger.Warning($"[SteamNetworkAdapter] ProcessIncomingMessages error: {ex.Message}");
+                LoggingHelper.Warning($"[SteamNetworkAdapter] ProcessIncomingMessages error: {ex.Message}");
             }
         }
 
@@ -146,13 +147,13 @@ namespace BetterStacks.Networking
         {
             if (!IsHost)
             {
-                MelonLogger.Msg("[SteamNetworkAdapter] BroadcastHostConfig ignored — not host");
+                LoggingHelper.Msg("[SteamNetworkAdapter] BroadcastHostConfig ignored — not host");
                 return;
             }
 
             if (_client == null)
             {
-                MelonLogger.Warning("[SteamNetworkAdapter] client not initialized");
+                LoggingHelper.Warning("[SteamNetworkAdapter] client not initialized");
                 return;
             }
 
@@ -160,11 +161,11 @@ namespace BetterStacks.Networking
             {
                 var json = JsonConvert.SerializeObject(cfg ?? new HostConfig());
                 _client.SetLobbyData("BetterStacks_HostConfig", json);
-                MelonLogger.Msg("[SteamNetworkAdapter] HostConfig set to lobby data");
+                LoggingHelper.Msg("[SteamNetworkAdapter] HostConfig set to lobby data");
             }
             catch (Exception ex)
             {
-                MelonLogger.Warning($"[SteamNetworkAdapter] BroadcastHostConfig failed: {ex.Message}");
+                LoggingHelper.Warning($"[SteamNetworkAdapter] BroadcastHostConfig failed: {ex.Message}");
             }
         }
     }

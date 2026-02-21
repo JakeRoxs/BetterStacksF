@@ -1,5 +1,6 @@
 using MelonLoader;
 using BetterStacks.Config;
+using BetterStacks.Utilities;
 
 namespace BetterStacks.Networking
 {
@@ -17,7 +18,7 @@ namespace BetterStacks.Networking
             // Toggle runtime flag so save/persistence logic knows host-authoritative state.
             BetterStacksMod.ServerAuthoritative = hostConfig.Config.EnableServerAuthoritativeConfig;
 
-            MelonLogger.Msg($"HostConfig applied; ServerAuthoritative={BetterStacksMod.ServerAuthoritative}");
+            LoggingHelper.Msg($"HostConfig applied; ServerAuthoritative={BetterStacksMod.ServerAuthoritative}");
         }
 
         public static bool ShouldAllowPersist(ModConfig attempted)
