@@ -82,6 +82,7 @@ namespace BetterStacks.Config
                 {
                     _suppressEntryEvents = false;
                 }
+            } // end lock
 #if DEBUG
             LoggingHelper.Msg($"Initial preference snapshot: {JsonConvert.SerializeObject(_lastAppliedPrefs)}");
 #endif
@@ -103,7 +104,7 @@ namespace BetterStacks.Config
 
             _initialized = true;
             _registered = true;
-        }
+        } 
 
         private static void OnEntryChanged<T>(T oldValue, T newValue)
         {
@@ -327,8 +328,11 @@ namespace BetterStacks.Config
                             _mixingCapacity.Value = _lastAppliedPrefs.MixingStationCapacity;
                             _mixingSpeed.Value = _lastAppliedPrefs.MixingStationSpeed;
                             _dryingCapacity.Value = _lastAppliedPrefs.DryingRackCapacity;
-                            foreach (var kv in _lastAppliedPrefs.CategoryMultipliers)
-                                CreateCategoryEntry(kv.Key, kv.Value).Value = kv.Value;
+                            if (_lastAppliedPrefs.CategoryMultipliers != null)
+                            {
+                                foreach (var kv in _lastAppliedPrefs.CategoryMultipliers)
+                                    CreateCategoryEntry(kv.Key, kv.Value).Value = kv.Value;
+                            }
                         }
                         finally { _suppressEntryEvents = false; }
 
