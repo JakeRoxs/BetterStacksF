@@ -70,13 +70,15 @@ public class BetterStacksMod : MelonMod
     {
         ConfigManager.LoadConfig();
 
-            // Ensure category-multiplier MelonPreferences entries are registered early so
-            // ModsApp / other preference editors can modify the same MelonPreferences_Entry
-            // instances we read from in PollAndApplyChanges.
-            try { PreferencesMapper.RegisterCategoryMultipliersFromGameDefs(); } catch { }
+        // Ensure category-multiplier MelonPreferences entries are registered early so
+        // ModsApp / other preference editors can modify the same MelonPreferences_Entry
+        // instances we read from in PollAndApplyChanges.
+        try { PreferencesMapper.RegisterCategoryMultipliersFromGameDefs(); } catch { }
+
         // local adapter when Steam is definitely not available.
         var steamAdapter = new SteamNetworkAdapter();
         NetworkingManager.Initialize(steamAdapter);
+
         if (!NetworkingManager.CurrentAdapter.IsInitialized)
         {
             // If the Steam adapter deferred initialization because Steam/Steamworks wasn't ready yet,
@@ -89,40 +91,27 @@ public class BetterStacksMod : MelonMod
             }
             else
             {
-                LoggingHelper.Msg("Steam adapter not available — falling back to local adapter.");
+                LoggingHelper.Init("Steam adapter not available — falling back to local adapter.");
                 NetworkingManager.Initialize(new LocalNetworkAdapter());
             }
         }
         else
         {
-            LoggingHelper.Msg("SteamNetworkAdapter initialized.");
+            LoggingHelper.Init("SteamNetworkAdapter initialized.");
         }
 
         // Log the loaded configuration so we can verify which category multipliers are active at runtime.
-        LoggingHelper.Msg($"Loaded config: {JsonConvert.SerializeObject(ConfigManager.CurrentConfig)}");
+        LoggingHelper.Init($"Loaded config: {JsonConvert.SerializeObject(ConfigManager.CurrentConfig)}");
 
         // If we're the session host, immediately broadcast the authoritative HostConfig so clients apply the same settings.
         if (NetworkingManager.CurrentAdapter?.IsHost ?? false)
         {
             NetworkingManager.BroadcastHostConfig(new HostConfig { Config = ConfigManager.CurrentConfig });
-            LoggingHelper.Msg("Broadcasted HostConfig (host).");
+            LoggingHelper.Init("Broadcasted HostConfig (host).");
         }
 
         var harmony = new HarmonyLib.Harmony("com.jakeroxs.betterstacks");
         FileLog.LogWriter = new StreamWriter("harmony.log") { AutoFlush = true };
-
-        // Use S1API lifecycle to apply stack overrides once at load time
-        GameLifecycle.OnPreLoad += () => StackOverrideManager.ApplyStackOverrides(ConfigManager.CurrentConfig);
-
-        // enforce StackLimit when quantities change (handles runtime config updates)
-        harmony.Patch(
-            AccessTools.Method(typeof(ItemInstance), "ChangeQuantity"),
-            prefix: new HarmonyMethod(typeof(StackLimitPatches), nameof(StackLimitPatches.ChangeQuantityPrefix))
-        );
-        harmony.Patch(
-            AccessTools.Method(typeof(ItemInstance), "SetQuantity"),
-            prefix: new HarmonyMethod(typeof(StackLimitPatches), nameof(StackLimitPatches.SetQuantityPrefix))
-        );
 
 
 

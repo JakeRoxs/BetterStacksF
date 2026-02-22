@@ -67,7 +67,7 @@ namespace BetterStacks.Networking
                 _client.Initialize();
                 IsInitialized = true;
                 _deferredInit = false;
-                LoggingHelper.Msg("[SteamNetworkAdapter] typed adapter initialized");
+                LoggingHelper.Init("[SteamNetworkAdapter] typed adapter initialized");
             }
             catch (Exception initEx)
             {
