@@ -1,14 +1,12 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Reflection;
 using MelonLoader;
 using Il2CppScheduleOne.ItemFramework;
 using BetterStacks.Networking;
 using Newtonsoft.Json;
 using S1API.Lifecycle;
-
-// services introduced during refactor
-
 using BetterStacks.Utilities;
 
 namespace BetterStacks.Config
@@ -17,85 +15,156 @@ namespace BetterStacks.Config
     {
         private const string CategoryId = "BetterStacks";
 
-        // In-memory mirror of CategoryMultipliers (replaces MelonPreferences_Entry registry).
-        private static readonly Dictionary<string,int> _categoryMultiplierValues = new();
+        private static MelonPreferences_Category _prefsCategory = null!;
+        private static MelonPreferences_Entry<bool> _enableServerAuthoritative = null!;
+        private static MelonPreferences_Entry<int> _mixingCapacity = null!;
+        private static MelonPreferences_Entry<int> _mixingSpeed = null!;
+        private static MelonPreferences_Entry<int> _dryingCapacity = null!;
 
-        // EnsureRegistered() idempotency flag.
+        private static readonly Dictionary<string, MelonPreferences_Entry<int>> _categoryEntries = new();
+        private static readonly Dictionary<string, int> _categoryMultiplierValues = new();
+
+        private static ModConfig? _lastAppliedPrefs = null;
         private static bool _registered = false;
+        private static bool _initialized = false;
+        private static bool _suppressEntryEvents = false;
 
-        // replaced by MultiplayerHelper.IsClientInMultiplayer
+        private static readonly HashSet<string> _reservedKeys = new HashSet<string>
+        {
+            "EnableServerAuthoritativeConfig",
+            "MixingStationCapacity",
+            "MixingStationSpeed",
+            "DryingRackCapacity"
+        };
+
+        private static readonly object _registrationLock = new object();
 
         public static void EnsureRegistered()
         {
             if (_registered) return;
-
-            try
+            lock (_registrationLock)
             {
-                // Mark registration-in-progress early so recursive calls during initialization
-                // (e.g. from RegisterCategoryMultipliersFromGameDefs) don't re-enter.  The flag
-                // is only left true once initialization succeeds; on any exception it will be
-                // cleared in the catch block below, allowing subsequent retries.
-                _registered = true;
+                if (_registered) return; // double-checked lock
 
-                // initialize JSON store and take the initial snapshot
-                JsonPreferencesStore.Initialize(() => ApplyPreferencesNow(persist: false));
+                _prefsCategory = MelonPreferences.CreateCategory(CategoryId, "BetterStacks Preferences");
 
-                _lastAppliedPrefs = JsonPreferencesStore.Read();
+                _suppressEntryEvents = true;
+                try
+                {
+                    _enableServerAuthoritative = _prefsCategory.CreateEntry("EnableServerAuthoritativeConfig", true,
+                        "Enable server-authoritative config",
+                        "When enabled the host may override player settings in multiplayer.");
+
+                    _mixingCapacity = _prefsCategory.CreateEntry("MixingStationCapacity", 1,
+                        "Mixing station capacity multiplier",
+                        "Multiplies the amount of items a mixing station can hold.");
+
+                    _mixingSpeed = _prefsCategory.CreateEntry("MixingStationSpeed", 1,
+                        "Mixing station speed multiplier",
+                        "Multiplies the speed of mixing stations.");
+
+                    _dryingCapacity = _prefsCategory.CreateEntry("DryingRackCapacity", 1,
+                        "Drying rack capacity multiplier",
+                        "Multiplies the capacity of drying racks.");
+
+                    _enableServerAuthoritative.OnEntryValueChanged.Subscribe(OnEntryChanged);
+                    _mixingCapacity.OnEntryValueChanged.Subscribe(OnEntryChanged);
+                    _mixingSpeed.OnEntryValueChanged.Subscribe(OnEntryChanged);
+                    _dryingCapacity.OnEntryValueChanged.Subscribe(OnEntryChanged);
+
+                    LoadExistingCategoryEntries();
+
+                    MelonPreferences.OnPreferencesSaved.Subscribe(_ => ApplyPreferencesNow(true));
+
+                    _lastAppliedPrefs = ReadFromPreferences();
+                }
+                finally
+                {
+                    _suppressEntryEvents = false;
+                }
 #if DEBUG
-                LoggingHelper.Msg($"Initial preference snapshot: {Newtonsoft.Json.JsonConvert.SerializeObject(_lastAppliedPrefs)}");
+            LoggingHelper.Msg($"Initial preference snapshot: {JsonConvert.SerializeObject(_lastAppliedPrefs)}");
 #endif
 
-                // Mirror CategoryMultipliers into the in-memory registry for quick lookup.
-                if (_lastAppliedPrefs?.CategoryMultipliers != null)
+            if (_lastAppliedPrefs?.CategoryMultipliers != null)
+            {
+                _categoryMultiplierValues.Clear();
+                foreach (var kv in _lastAppliedPrefs.CategoryMultipliers)
+                    _categoryMultiplierValues[kv.Key] = kv.Value;
+            }
+
+            try { RegisterCategoryMultipliersFromGameDefs(); }
+            catch (Exception ex)
+            {
+                // registration is best-effort; log any failure for diagnostics
+                LoggingHelper.Warning($"RegisterCategoryMultipliersFromGameDefs failed: {ex.Message}");
+            }
+
+
+            _initialized = true;
+            _registered = true;
+        }
+
+        private static void OnEntryChanged<T>(T oldValue, T newValue)
+        {
+            if (!_suppressEntryEvents)
+                ApplyPreferencesNow(persist: false);
+        }
+
+        private static void LoadExistingCategoryEntries()
+        {
+            try
+            {
+                // MelonPreferences does not expose a public list of entries, so we
+                // reflect into its private 'Entries' dictionary. This mirrors the
+                // internal structure of the currently used MelonLoader version and
+                // may break if that implementation changes. Any failure here is
+                // non‑fatal; it simply means we won't pick up existing user-defined
+                // category entries.
+                var prop = typeof(MelonPreferences_Category).GetProperty("Entries",
+                    BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+                if (prop == null) return;
+
+                var dict = prop.GetValue(_prefsCategory) as System.Collections.IEnumerable;
+                if (dict == null) return;
+
+                foreach (var kv in dict)
                 {
-                    _categoryMultiplierValues.Clear();
-                    foreach (var kv in _lastAppliedPrefs.CategoryMultipliers)
-                        _categoryMultiplierValues[kv.Key] = kv.Value;
+                    var keyProp = kv.GetType().GetProperty("Key");
+                    var valueProp = kv.GetType().GetProperty("Value");
+                    if (keyProp == null || valueProp == null) continue;
+
+                    var key = keyProp.GetValue(kv) as string;
+                    var entryObj = valueProp.GetValue(kv);
+                    if (key == null || entryObj == null) continue;
+                    if (_reservedKeys.Contains(key)) continue;
+
+                    var entryType = entryObj.GetType();
+                    if (entryType.IsGenericType &&
+                        entryType.GetGenericTypeDefinition() == typeof(MelonPreferences_Entry<>) &&
+                        entryType.GetGenericArguments()[0] == typeof(int))
+                    {
+                        var intEntry = (MelonPreferences_Entry<int>)entryObj;
+                        _categoryEntries[key] = intEntry;
+                        intEntry.OnEntryValueChanged.Subscribe((o, n) =>
+                        {
+                            if (!_suppressEntryEvents)
+                                ApplyPreferencesNow(persist: false);
+                        });
+                    }
                 }
-
-                // Prevent recursive re-entry: mark registered before calling the helper that may call EnsureRegistered().
-
-                try { RegisterCategoryMultipliersFromGameDefs(); } catch { }
-
-                _initialized = true;
-
             }
             catch (Exception ex)
             {
-                // initialization did not complete, clear the flag so future callers may try again
-                _registered = false;
-                LoggingHelper.Warning($"EnsureRegistered failed: {ex.Message}");
+                LoggingHelper.Warning($"LoadExistingCategoryEntries reflection failed: {ex.Message}");
             }
         }
 
-
-
-        private static ModConfig? _lastAppliedPrefs = null;
-
-        // Whether initial registration and snapshot have completed.
-        private static bool _initialized = false;
-
-
-        // Simplified: rely on MelonPreferences entry events; no FileSystemWatcher or on-disk hash tracking.
-
-        // Return the set of category names that actually appear in the game's item definitions.
-        // Unlike the old implementation, we do **not** fall back to the enum; an empty set means data
-        // is not ready yet and callers should defer registration until the game has loaded defs.
-        // moved to CategoryMultiplierRegistrar
-
-
-
-        // Create (or prune) CategoryMultiplier keys in the JSON config based on game definitions.
-        // Idempotent and safe to call multiple times.
         public static void RegisterCategoryMultipliersFromGameDefs()
         {
             CategoryMultiplierRegistrar.RegisterCategoryMultipliersFromGameDefs();
         }
 
-        /// <summary>
-        /// Helper used by other services to refresh the in-memory mirror after a
-        /// config change or category registration.
-        /// </summary>
         internal static void UpdateInMemoryCategoryMultipliers(ModConfig cfg)
         {
             _categoryMultiplierValues.Clear();
@@ -106,20 +175,129 @@ namespace BetterStacks.Config
             }
         }
 
-        // Apply current MelonPreferences immediately (called from event handlers or OnPreferencesSaved).
+        public static ModConfig ReadFromPreferences()
+        {
+            EnsureRegistered();
+            try
+            {
+                var cfg = new ModConfig
+                {
+                    EnableServerAuthoritativeConfig = _enableServerAuthoritative.Value,
+                    MixingStationCapacity = _mixingCapacity.Value,
+                    MixingStationSpeed = _mixingSpeed.Value,
+                    DryingRackCapacity = _dryingCapacity.Value,
+                    CategoryMultipliers = new Dictionary<string, int>()
+                };
+
+                foreach (var kv in _categoryEntries)
+                    cfg.CategoryMultipliers[kv.Key] = kv.Value.Value;
+
+                return cfg;
+            }
+            catch (Exception ex)
+            {
+                LoggingHelper.Warning($"Failed to read preferences: {ex.Message}");
+                return new ModConfig();
+            }
+        }
+
+        public static void WriteToPreferences(ModConfig cfg)
+        {
+            if (MultiplayerHelper.IsClientInMultiplayer())
+            {
+                LoggingHelper.Msg("Client attempted to write preferences during multiplayer — operation blocked.");
+                return;
+            }
+
+            EnsureRegistered();
+
+            _suppressEntryEvents = true;
+            try
+            {
+                _enableServerAuthoritative.Value = cfg.EnableServerAuthoritativeConfig;
+                _mixingCapacity.Value = cfg.MixingStationCapacity;
+                _mixingSpeed.Value = cfg.MixingStationSpeed;
+                _dryingCapacity.Value = cfg.DryingRackCapacity;
+                if (cfg.CategoryMultipliers != null)
+                {
+                    foreach (var kv in cfg.CategoryMultipliers)
+                    {
+                        var entry = CreateCategoryEntry(kv.Key, 1);
+                        entry.Value = kv.Value;
+                    }
+                }
+            }
+            finally
+            {
+                _suppressEntryEvents = false;
+            }
+
+            MelonPreferences.Save();
+
+            _categoryMultiplierValues.Clear();
+            if (cfg.CategoryMultipliers != null)
+            {
+                foreach (var kv in cfg.CategoryMultipliers)
+                    _categoryMultiplierValues[kv.Key] = kv.Value;
+            }
+
+            _lastAppliedPrefs = cfg;
+
+            var appliedCfg = ReadFromPreferences();
+            BetterStacksMod.EnqueueConfigUpdate(appliedCfg);
+            try
+            {
+                var adapter = NetworkingManager.CurrentAdapter;
+                if (adapter != null && adapter.IsHost)
+                    adapter.BroadcastHostConfig(new HostConfig { Config = appliedCfg });
+            }
+            catch { }
+        }
+
+        private static MelonPreferences_Entry<int> CreateCategoryEntry(string name, int defaultValue)
+        {
+            if (_categoryEntries.TryGetValue(name, out var existing))
+                return existing;
+
+            var entry = _prefsCategory.CreateEntry(name, defaultValue,
+                $"Multiplier for {name}", $"Stack size multiplier for the '{name}' category.");
+            entry.OnEntryValueChanged.Subscribe((o, n) =>
+            {
+                if (!_suppressEntryEvents)
+                    ApplyPreferencesNow(persist: false);
+            });
+
+            _categoryEntries[name] = entry;
+            return entry;
+        }
+
+        public static bool AreConfigsEqual(ModConfig a, ModConfig b)
+        {
+            if (a.EnableServerAuthoritativeConfig != b.EnableServerAuthoritativeConfig) return false;
+            if (a.MixingStationCapacity != b.MixingStationCapacity) return false;
+            if (a.MixingStationSpeed != b.MixingStationSpeed) return false;
+            if (a.DryingRackCapacity != b.DryingRackCapacity) return false;
+
+            var da = a.CategoryMultipliers ?? new Dictionary<string, int>();
+            var db = b.CategoryMultipliers ?? new Dictionary<string, int>();
+            if (da.Count != db.Count) return false;
+            foreach (var kv in da)
+            {
+                if (!db.TryGetValue(kv.Key, out var v) || v != kv.Value) return false;
+            }
+            return true;
+        }
+
         public static void ApplyPreferencesNow(bool persist = true)
         {
             try
             {
                 EnsureRegistered();
 
-                // If ApplyPreferencesNow is invoked before initial registration/snapshot completes (for example,
-                // MelonPreferences fires a Saved event while we are still registering entries), treat it as the
-                // initial snapshot rather than a user-driven change — do not re-persist or broadcast.
                 if (!_initialized)
                 {
                     _lastAppliedPrefs = ReadFromPreferences();
-                    LoggingHelper.Msg($"Initial preference snapshot (via ApplyPreferencesNow): {Newtonsoft.Json.JsonConvert.SerializeObject(_lastAppliedPrefs)}");
+                    LoggingHelper.Msg($"Initial preference snapshot (via ApplyPreferencesNow): {JsonConvert.SerializeObject(_lastAppliedPrefs)}");
                     _initialized = true;
                     return;
                 }
@@ -129,14 +307,12 @@ namespace BetterStacks.Config
                 if (_lastAppliedPrefs != null && AreConfigsEqual(_lastAppliedPrefs, current))
                     return;
 
-                LoggingHelper.Msg($"Preference change detected: previous={Newtonsoft.Json.JsonConvert.SerializeObject(_lastAppliedPrefs)}, new={Newtonsoft.Json.JsonConvert.SerializeObject(current)}");
+                LoggingHelper.Msg($"Preference change detected: previous={JsonConvert.SerializeObject(_lastAppliedPrefs)}, new={JsonConvert.SerializeObject(current)}");
 
-                // If connected and not host, revert the change (do not persist) and log.
                 if (MultiplayerHelper.IsClientInMultiplayer())
                 {
                     if (_lastAppliedPrefs != null)
                     {
-                        // Revert in-memory mirror to the last-applied (host) values.
                         _categoryMultiplierValues.Clear();
                         if (_lastAppliedPrefs.CategoryMultipliers != null)
                         {
@@ -144,7 +320,18 @@ namespace BetterStacks.Config
                                 _categoryMultiplierValues[kv.Key] = kv.Value;
                         }
 
-                        // Apply the host config locally so runtime values stay consistent.
+                        _suppressEntryEvents = true;
+                        try
+                        {
+                            _enableServerAuthoritative.Value = _lastAppliedPrefs.EnableServerAuthoritativeConfig;
+                            _mixingCapacity.Value = _lastAppliedPrefs.MixingStationCapacity;
+                            _mixingSpeed.Value = _lastAppliedPrefs.MixingStationSpeed;
+                            _dryingCapacity.Value = _lastAppliedPrefs.DryingRackCapacity;
+                            foreach (var kv in _lastAppliedPrefs.CategoryMultipliers)
+                                CreateCategoryEntry(kv.Key, kv.Value).Value = kv.Value;
+                        }
+                        finally { _suppressEntryEvents = false; }
+
                         BetterStacksMod.EnqueueConfigUpdate(_lastAppliedPrefs);
                     }
 
@@ -152,14 +339,8 @@ namespace BetterStacks.Config
                     return;
                 }
 
-                // Allowed change (host or single-player): apply, persist and broadcast if host.
                 _lastAppliedPrefs = current;
                 BetterStacksMod.EnqueueConfigUpdate(current);
-
-                if (persist)
-                {
-                    try { WriteToPreferences(current); LoggingHelper.Msg("Saved JSON preferences after host edit."); } catch (Exception ex) { LoggingHelper.Warning($"Failed to save JSON preferences after host edit: {ex.Message}"); }
-                }
 
                 try
                 {
@@ -177,81 +358,6 @@ namespace BetterStacks.Config
             }
         }
 
-        // Entry-level MelonPreferences handlers removed — JSON config uses a FileSystemWatcher for hot-reload.
-
-        public static bool AreConfigsEqual(ModConfig a, ModConfig b)
-        {
-            if (a.EnableServerAuthoritativeConfig != b.EnableServerAuthoritativeConfig) return false;
-            if (a.MixingStationCapacity != b.MixingStationCapacity) return false;
-            if (a.MixingStationSpeed != b.MixingStationSpeed) return false;
-            if (a.DryingRackCapacity != b.DryingRackCapacity) return false;
-
-            var da = a.CategoryMultipliers ?? new Dictionary<string,int>();
-            var db = b.CategoryMultipliers ?? new Dictionary<string,int>();
-            if (da.Count != db.Count) return false;
-            foreach (var kv in da)
-            {
-                if (!db.TryGetValue(kv.Key, out var v) || v != kv.Value) return false;
-            }
-            return true;
-        }
-
-        public static ModConfig ReadFromPreferences()
-        {
-            EnsureRegistered();
-            try
-            {
-                return JsonPreferencesStore.Read();
-            }
-            catch (Exception ex)
-            {
-                LoggingHelper.Warning($"Failed to read JSON config: {ex.Message}");
-                return new ModConfig();
-            }
-        }
-
-        public static void WriteToPreferences(ModConfig cfg)
-        {
-            // Disallow clients from programmatically writing prefs while connected to a host.
-            if (MultiplayerHelper.IsClientInMultiplayer())
-            {
-                LoggingHelper.Msg("Client attempted to write preferences during multiplayer — operation blocked.");
-                return;
-            }
-
-            EnsureRegistered();
-
-            JsonPreferencesStore.Write(cfg);
-
-            // update in-memory mirror
-            _categoryMultiplierValues.Clear();
-            if (cfg.CategoryMultipliers != null)
-            {
-                foreach (var kv in cfg.CategoryMultipliers)
-                    _categoryMultiplierValues[kv.Key] = kv.Value;
-            }
-
-            // update last-applied snapshot
-            _lastAppliedPrefs = cfg;
-
-            // Apply and broadcast if host.
-            var appliedCfg = ReadFromPreferences();
-            BetterStacksMod.EnqueueConfigUpdate(appliedCfg);
-            try
-            {
-                var adapter = NetworkingManager.CurrentAdapter;
-                if (adapter != null && adapter.IsHost)
-                    adapter.BroadcastHostConfig(new HostConfig { Config = appliedCfg });
-            }
-            catch { }
-        }
-
-
-
-
-        // File-path helpers have been moved into JsonPreferencesStore; no longer needed here.
-
-        // Originals are tracked in a dedicated helper; we keep wrappers for backwards compatibility.
         public static int? GetSavedOriginalStackLimit(string defId) => OriginalStackTracker.GetSavedOriginalStackLimit(defId);
         public static void PersistOriginalStackLimit(string defId, int originalLimit) => OriginalStackTracker.PersistOriginalStackLimit(defId, originalLimit);
         public static bool HasSavedOriginals() => OriginalStackTracker.HasSavedOriginals();

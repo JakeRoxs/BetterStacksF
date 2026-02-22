@@ -10,7 +10,8 @@ namespace BetterStacks.Config
 {
     /// <summary>
     /// Helper responsible for synchronizing the CategoryMultipliers dictionary with
-    /// the game definitions.  Adds missing categories and prunes obsolete ones.
+    /// the game definitions. Adds missing categories and prunes obsolete ones by
+    /// writing values into the mod's MelonPreferences entries.
     /// </summary>
     internal static class CategoryMultiplierRegistrar
     {
@@ -74,7 +75,14 @@ namespace BetterStacks.Config
 
                 if (madeChanges)
                 {
-                    try { PreferencesMapper.WriteToPreferences(cfg); } catch (Exception ex) { LoggingHelper.Warning($"Failed to persist CategoryMultipliers JSON: {ex.Message}"); }
+                    try
+                    {
+                        PreferencesMapper.WriteToPreferences(cfg);
+                    }
+                    catch (Exception ex)
+                    {
+                        LoggingHelper.Warning($"Failed to persist CategoryMultipliers to preferences: {ex.Message}");
+                    }
                 }
 
                 PreferencesMapper.UpdateInMemoryCategoryMultipliers(cfg);
