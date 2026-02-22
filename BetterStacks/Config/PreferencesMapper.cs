@@ -8,6 +8,7 @@ using BetterStacks.Networking;
 using Newtonsoft.Json;
 using S1API.Lifecycle;
 using BetterStacks.Utilities;
+using System.IO;
 
 namespace BetterStacks.Config
 {
@@ -39,14 +40,40 @@ namespace BetterStacks.Config
 
         private static readonly object _registrationLock = new object();
 
+        private static string GetUserDataDirectory()
+        {
+            try
+            {
+                var t = Type.GetType("MelonLoader.MelonEnvironment, MelonLoader");
+                if (t != null)
+                {
+                    var prop = t.GetProperty("UserDataDirectory", BindingFlags.Public | BindingFlags.Static);
+                    if (prop != null)
+                    {
+                        var val = prop.GetValue(null) as string;
+                        if (!string.IsNullOrEmpty(val)) return val;
+                    }
+                }
+            }
+            catch { }
+
+            var gameDir = Environment.CurrentDirectory;
+            return Path.Combine(gameDir, "UserData");
+        }
+
         public static void EnsureRegistered()
         {
             if (_registered) return;
             lock (_registrationLock)
             {
                 if (_registered) return; // double-checked lock
+                // mark early to prevent the recursive call from RegisterCategoryMultipliers
+                // re-entering this method.
+                _registered = true;
 
                 _prefsCategory = MelonPreferences.CreateCategory(CategoryId, "BetterStacks Preferences");
+                // store preferences in a dedicated file to keep the main cfg clean
+                try { _prefsCategory.SetFilePath(Path.Combine(GetUserDataDirectory(), "BetterStacksF.cfg")); } catch { }
 
                 _suppressEntryEvents = true;
                 try
@@ -103,7 +130,6 @@ namespace BetterStacks.Config
 
 
             _initialized = true;
-            _registered = true;
         } 
 
         private static void OnEntryChanged<T>(T oldValue, T newValue)

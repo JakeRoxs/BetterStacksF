@@ -7,7 +7,7 @@ It’s basically the same idea as before, just smarter, more flexible, and more 
 - Stack sizes can be adjusted for every category individually.
 - In multiplayer the host sends the settings to everyone else, so all players share the same rules.
 - The mod remembers the original values so it never multiplies the same stack twice.
-- Configuration is now stored in MelonPreferences (in `MelonPreferences.cfg` under the "BetterStacks" category) and may be edited via ModsApp or by hand.  The old `BetterStacks.json` file is ignored; if it exists you can delete it.
+- Configuration is now stored in a dedicated MelonPreferences category (`BetterStacks`) that is written to a separate `BetterStacksF.cfg` file in the UserData folder.  You can edit it via ModsApp or by hand.
 - The code is organised into separate pieces (config, networking, patches) to keep it easier to work on.
 
 ---
