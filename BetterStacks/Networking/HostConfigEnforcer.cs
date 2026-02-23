@@ -23,11 +23,14 @@ namespace BetterStacks.Networking
 
         public static bool ShouldAllowPersist(ModConfig attempted)
         {
+            // if host isn't enforcing authority, the client may save whatever it likes
             if (!BetterStacksMod.ServerAuthoritative)
                 return true;
 
-            // Block client-side persistence when the host declared server-authoritative.
-            return !(attempted?.EnableServerAuthoritativeConfig == true);
+            // while authoritative the host’s setting is the only valid one – clients
+            // shouldn't be able to persist a different value at all.
+            return attempted?.EnableServerAuthoritativeConfig ==
+                   BetterStacksMod.ServerAuthoritativeEnabled;
         }
     }
 }

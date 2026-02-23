@@ -285,9 +285,9 @@ namespace BetterStacks.Config
         {
             if (_categoryEntries.TryGetValue(name, out var existing))
                 return existing;
-
-            var entry = _prefsCategory.CreateEntry(name, defaultValue,
-                $"Multiplier for {name}", $"Stack size multiplier for the '{name}' category.");
+            // these entries don’t need a tooltip‑style description, it just
+            // bloats the ModsApp UI so we leave it empty
+            var entry = _prefsCategory.CreateEntry(name, defaultValue, "");
             entry.OnEntryValueChanged.Subscribe((o, n) =>
             {
                 if (!_suppressEntryEvents)
