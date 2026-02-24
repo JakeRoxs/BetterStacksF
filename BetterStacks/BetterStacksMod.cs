@@ -13,6 +13,7 @@ using HarmonyLib;
 
 using Il2CppScheduleOne.ItemFramework;
 using Il2CppScheduleOne.ObjectScripts;
+using Il2CppScheduleOne.UI.Stations;
 
 using MelonLoader;
 using MelonLoader.Utils;
@@ -21,7 +22,7 @@ using Newtonsoft.Json;
 
 using S1API.Lifecycle;
 
-[assembly: MelonInfo(typeof(BetterStacksMod), "BetterStacksF", "0.0.2", "JakeRoxs")]
+[assembly: MelonInfo(typeof(BetterStacksMod), "BetterStacksF", "0.0.3", "JakeRoxs")]
 [assembly: MelonGame("TVGS", "Schedule I")]
 
 namespace BetterStacks;
@@ -137,6 +138,12 @@ public class BetterStacksMod : MelonMod {
     harmony.Patch(
         AccessTools.Method(typeof(MixingStation), "Start"),
         prefix: new HarmonyMethod(typeof(MixingStationPatches), nameof(MixingStationPatches.PatchMixingStationCapacity))
+    );
+
+    // Patch Drying Rack capacity — implementation moved to Patches/DryingRackPatches.cs
+    harmony.Patch(
+        AccessTools.Method(typeof(DryingRackCanvas), "SetIsOpen"),
+        prefix: new HarmonyMethod(typeof(DryingRackPatches), nameof(DryingRackPatches.PatchDryingRackCapacity))
     );
 
     // Cauldron patching: only adjust cook time using the StartCookOperation

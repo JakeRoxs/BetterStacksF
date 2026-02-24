@@ -13,12 +13,9 @@ namespace BetterStacks.Config {
     // When true the host may assert authoritative control over this mod's config via HostConfig messages.
     public bool EnableServerAuthoritativeConfig { get; set; } = true;
 
-    public int MixingStationCapacity { get; set; } = 1;
+    public int MixingStationCapacity { get; set; } = 3;
     public int MixingStationSpeed { get; set; } = 1;
-    public int DryingRackCapacity { get; set; } = 1;
-
-    // multiplier applied to cauldron ingredient slot 0 (coca leaves)
-    // also used to scale the resulting output quantity in FinishCookOperation.
+    public int DryingRackCapacity { get; set; } = 3;
     public int CauldronIngredientMultiplier { get; set; } = 1;
     public int CauldronCookSpeed { get; set; } = 1;  // divisor for cook time (higher = faster)
   }
