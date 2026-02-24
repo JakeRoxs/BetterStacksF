@@ -1,28 +1,25 @@
 using System.Collections.Generic;
 
-namespace BetterStacks.Config
-{
-    public class ModConfig
-    {
-        // Primary dynamic category multipliers keyed by EItemCategory name.
-        public Dictionary<string, int> CategoryMultipliers { get; set; } = new Dictionary<string, int>
-        {
-            ["Product"] = 3,
-            ["Packaging"] = 3,
-            ["Agriculture"] = 3,
-            ["Ingredient"] = 3
-        };
+namespace BetterStacks.Config {
+  public class ModConfig {
+    // Primary dynamic category multipliers keyed by EItemCategory name.
+    public Dictionary<string, int> CategoryMultipliers { get; set; } = new Dictionary<string, int> {
+      ["Product"] = 3,
+      ["Packaging"] = 3,
+      ["Agriculture"] = 3,
+      ["Ingredient"] = 3
+    };
 
-        // When true the host may assert authoritative control over this mod's config via HostConfig messages.
-        public bool EnableServerAuthoritativeConfig { get; set; } = true;
+    // When true the host may assert authoritative control over this mod's config via HostConfig messages.
+    public bool EnableServerAuthoritativeConfig { get; set; } = true;
 
-        public int MixingStationCapacity { get; set; } = 1;
-        public int MixingStationSpeed { get; set; } = 1;
-        public int DryingRackCapacity { get; set; } = 1;
-        
-        // multiplier applied to cauldron ingredient slot 0 (coca leaves)
-        // also used to scale the resulting output quantity in FinishCookOperation.
-        public int CauldronIngredientMultiplier { get; set; } = 1;
-        public int CauldronCookSpeed { get; set; } = 1;  // divisor for cook time (higher = faster)
-    }
+    public int MixingStationCapacity { get; set; } = 1;
+    public int MixingStationSpeed { get; set; } = 1;
+    public int DryingRackCapacity { get; set; } = 1;
+
+    // multiplier applied to cauldron ingredient slot 0 (coca leaves)
+    // also used to scale the resulting output quantity in FinishCookOperation.
+    public int CauldronIngredientMultiplier { get; set; } = 1;
+    public int CauldronCookSpeed { get; set; } = 1;  // divisor for cook time (higher = faster)
+  }
 }

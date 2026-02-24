@@ -1,0 +1,57 @@
+root = true
+
+[*]
+charset = utf-8
+end_of_line = crlf
+insert_final_newline = true
+trim_trailing_whitespace = true
+
+[*.{cs,csproj,props,targets}]
+# indentation
+indent_style = space
+indent_size = 2
+tab_width = 2
+
+# using directives: place System first and separate groups with blank line
+dotnet_sort_system_directives_first = true
+dotnet_separate_import_directive_groups = true
+
+# preferred var usage (matches existing code patterns)
+csharp_style_var_for_built_in_types = true:suggestion
+csharp_style_var_when_type_is_apparent = true:suggestion
+csharp_style_var_elsewhere = false:suggestion
+
+# expression-bodied members
+csharp_style_expression_bodied_methods = false:suggestion
+csharp_style_expression_bodied_properties = false:suggestion
+csharp_style_expression_bodied_constructors = false:suggestion
+csharp_style_expression_bodied_operators = false:suggestion
+csharp_style_expression_bodied_accessors = false:suggestion
+
+# braces on same line
+csharp_new_line_before_open_brace = none:silent
+csharp_new_line_before_open_brace_types = none:silent
+csharp_new_line_before_open_brace_methods = none:silent
+csharp_new_line_before_open_brace_properties = none:silent
+csharp_new_line_before_open_brace_accessors = none:silent
+csharp_new_line_before_open_brace_anonymous_methods = none:silent
+csharp_new_line_before_open_brace_control_blocks = none:silent
+csharp_new_line_before_open_brace_anonymous_types = none:silent
+csharp_new_line_before_open_brace_lambdas = none:silent
+
+# naming conventions - private fields start with underscore and use camel case
+dotnet_naming_rule.private_fields_should_be_camel_case.severity = suggestion
+dotnet_naming_rule.private_fields_should_be_camel_case.symbols = private_fields
+dotnet_naming_rule.private_fields_should_be_camel_case.style = camel_case_underscore
+
+dotnet_naming_symbols.private_fields.applicable_kinds = field
+dotnet_naming_symbols.private_fields.accessibility = private
+
+dotnet_naming_style.camel_case_underscore.capitalization = camel_case
+dotnet_naming_style.camel_case_underscore.required_prefix = _
+
+# require braces for control blocks (always)
+csharp_prefer_braces = true:suggestion
+
+# prefer explicit tuple names
+csharp_style_tuple_names = true:suggestion
