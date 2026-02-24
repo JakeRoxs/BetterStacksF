@@ -21,7 +21,7 @@ using Newtonsoft.Json;
 
 using S1API.Lifecycle;
 
-[assembly: MelonInfo(typeof(BetterStacksMod), "BetterStacksF", "0.0.1", "JakeRoxs")]
+[assembly: MelonInfo(typeof(BetterStacksMod), "BetterStacksF", "0.0.2", "JakeRoxs")]
 [assembly: MelonGame("TVGS", "Schedule I")]
 
 namespace BetterStacks;
