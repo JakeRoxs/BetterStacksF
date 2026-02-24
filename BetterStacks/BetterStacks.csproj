@@ -42,6 +42,9 @@
     <Reference Include="UnityEngine.IMGUIModule">
       <HintPath>$(ScheduleRoot)\MelonLoader\Il2CppAssemblies\UnityEngine.IMGUIModule.dll</HintPath>
     </Reference>
+    <Reference Include="Il2CppFishNet.Runtime">
+      <HintPath>$(ScheduleRoot)\MelonLoader\Il2CppAssemblies\Il2CppFishNet.Runtime.dll</HintPath>
+    </Reference>
 
     <!-- Reference S1API from the local game install; we look in the root mods\
          folder so that the mod loader copy doesn’t need to be installed. -->

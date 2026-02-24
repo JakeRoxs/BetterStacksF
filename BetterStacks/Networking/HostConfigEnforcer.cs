@@ -13,7 +13,7 @@ namespace BetterStacks.Networking
                 return;
 
             // Update internal config and re-apply authoritative overrides.
-            BetterStacksMod.EnqueueConfigUpdate(hostConfig.Config);
+            ConfigManager.EnqueueConfigUpdate(hostConfig.Config);
 
             // Toggle runtime flag so save/persistence logic knows host-authoritative state.
             BetterStacksMod.ServerAuthoritative = hostConfig.Config.EnableServerAuthoritativeConfig;

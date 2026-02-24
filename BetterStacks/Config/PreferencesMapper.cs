@@ -21,6 +21,8 @@ namespace BetterStacks.Config
         private static MelonPreferences_Entry<int> _mixingCapacity = null!;
         private static MelonPreferences_Entry<int> _mixingSpeed = null!;
         private static MelonPreferences_Entry<int> _dryingCapacity = null!;
+        private static MelonPreferences_Entry<int> _cauldronMultiplier = null!;
+        private static MelonPreferences_Entry<int> _cauldronCookSpeed = null!;
 
         private static readonly Dictionary<string, MelonPreferences_Entry<int>> _categoryEntries = new();
         private static readonly Dictionary<string, int> _categoryMultiplierValues = new();
@@ -35,7 +37,9 @@ namespace BetterStacks.Config
             "EnableServerAuthoritativeConfig",
             "MixingStationCapacity",
             "MixingStationSpeed",
-            "DryingRackCapacity"
+            "DryingRackCapacity",
+            "CauldronIngredientMultiplier",
+            "CauldronCookSpeed"
         };
 
         private static readonly object _registrationLock = new object();
@@ -88,16 +92,26 @@ namespace BetterStacks.Config
 
                     _mixingSpeed = _prefsCategory.CreateEntry("MixingStationSpeed", 1,
                         "Mixing station speed multiplier",
-                        "Multiplies the speed of mixing stations.");
+                        "Divides the time of mixing stations, higher values make mixing faster.");
 
                     _dryingCapacity = _prefsCategory.CreateEntry("DryingRackCapacity", 1,
                         "Drying rack capacity multiplier",
                         "Multiplies the capacity of drying racks.");
 
+                    _cauldronMultiplier = _prefsCategory.CreateEntry("CauldronIngredientMultiplier", 1,
+                        "Cauldron ingredient multiplier",
+                        "Multiplies the quantity able to be cooked (coca leaves) and the resulting output amount.");
+
+                    _cauldronCookSpeed = _prefsCategory.CreateEntry("CauldronCookSpeed", 1,
+                        "Cauldron cook speed multiplier",
+                        "Divides the cooking time when a cauldron starts a recipe, higher values make cooking faster.");
+
                     _enableServerAuthoritative.OnEntryValueChanged.Subscribe(OnEntryChanged);
                     _mixingCapacity.OnEntryValueChanged.Subscribe(OnEntryChanged);
                     _mixingSpeed.OnEntryValueChanged.Subscribe(OnEntryChanged);
                     _dryingCapacity.OnEntryValueChanged.Subscribe(OnEntryChanged);
+                    _cauldronMultiplier.OnEntryValueChanged.Subscribe(OnEntryChanged);
+                    _cauldronCookSpeed.OnEntryValueChanged.Subscribe(OnEntryChanged);
 
                     LoadExistingCategoryEntries();
 
@@ -213,6 +227,8 @@ namespace BetterStacks.Config
                     MixingStationCapacity = _mixingCapacity.Value,
                     MixingStationSpeed = _mixingSpeed.Value,
                     DryingRackCapacity = _dryingCapacity.Value,
+                    CauldronIngredientMultiplier = _cauldronMultiplier.Value,
+                    CauldronCookSpeed = _cauldronCookSpeed.Value,
                     CategoryMultipliers = new Dictionary<string, int>()
                 };
 
@@ -228,6 +244,39 @@ namespace BetterStacks.Config
             }
         }
 
+        /// <summary>
+        /// Update all preference entries (and in‑memory multiplier cache) to match the
+        /// supplied config object. Entry change events are suppressed during the
+        /// operation.
+        /// </summary>
+        private static void ApplyConfigToEntries(ModConfig cfg)
+        {
+            _suppressEntryEvents = true;
+            try
+            {
+                _enableServerAuthoritative.Value = cfg.EnableServerAuthoritativeConfig;
+                _mixingCapacity.Value = cfg.MixingStationCapacity;
+                _mixingSpeed.Value = cfg.MixingStationSpeed;
+                _dryingCapacity.Value = cfg.DryingRackCapacity;
+                _cauldronMultiplier.Value = cfg.CauldronIngredientMultiplier;
+                _cauldronCookSpeed.Value = cfg.CauldronCookSpeed;
+
+                _categoryMultiplierValues.Clear();
+                if (cfg.CategoryMultipliers != null)
+                {
+                    foreach (var kv in cfg.CategoryMultipliers)
+                    {
+                        CreateCategoryEntry(kv.Key, kv.Value).Value = kv.Value;
+                        _categoryMultiplierValues[kv.Key] = kv.Value;
+                    }
+                }
+            }
+            finally
+            {
+                _suppressEntryEvents = false;
+            }
+        }
+
         public static void WriteToPreferences(ModConfig cfg)
         {
             if (MultiplayerHelper.IsClientInMultiplayer())
@@ -238,40 +287,15 @@ namespace BetterStacks.Config
 
             EnsureRegistered();
 
-            _suppressEntryEvents = true;
-            try
-            {
-                _enableServerAuthoritative.Value = cfg.EnableServerAuthoritativeConfig;
-                _mixingCapacity.Value = cfg.MixingStationCapacity;
-                _mixingSpeed.Value = cfg.MixingStationSpeed;
-                _dryingCapacity.Value = cfg.DryingRackCapacity;
-                if (cfg.CategoryMultipliers != null)
-                {
-                    foreach (var kv in cfg.CategoryMultipliers)
-                    {
-                        var entry = CreateCategoryEntry(kv.Key, 1);
-                        entry.Value = kv.Value;
-                    }
-                }
-            }
-            finally
-            {
-                _suppressEntryEvents = false;
-            }
+            // sync UI entries + internal cache to the supplied config
+            ApplyConfigToEntries(cfg);
 
             MelonPreferences.Save();
-
-            _categoryMultiplierValues.Clear();
-            if (cfg.CategoryMultipliers != null)
-            {
-                foreach (var kv in cfg.CategoryMultipliers)
-                    _categoryMultiplierValues[kv.Key] = kv.Value;
-            }
 
             _lastAppliedPrefs = cfg;
 
             var appliedCfg = ReadFromPreferences();
-            BetterStacksMod.EnqueueConfigUpdate(appliedCfg);
+            ConfigManager.EnqueueConfigUpdate(appliedCfg);
             try
             {
                 var adapter = NetworkingManager.CurrentAdapter;
@@ -304,6 +328,8 @@ namespace BetterStacks.Config
             if (a.MixingStationCapacity != b.MixingStationCapacity) return false;
             if (a.MixingStationSpeed != b.MixingStationSpeed) return false;
             if (a.DryingRackCapacity != b.DryingRackCapacity) return false;
+            if (a.CauldronIngredientMultiplier != b.CauldronIngredientMultiplier) return false;
+            if (a.CauldronCookSpeed != b.CauldronCookSpeed) return false;
 
             var da = a.CategoryMultipliers ?? new Dictionary<string, int>();
             var db = b.CategoryMultipliers ?? new Dictionary<string, int>();
@@ -340,29 +366,11 @@ namespace BetterStacks.Config
                 {
                     if (_lastAppliedPrefs != null)
                     {
-                        _categoryMultiplierValues.Clear();
-                        if (_lastAppliedPrefs.CategoryMultipliers != null)
-                        {
-                            foreach (var kv in _lastAppliedPrefs.CategoryMultipliers)
-                                _categoryMultiplierValues[kv.Key] = kv.Value;
-                        }
+                        // When a client makes a change, revert everything to the last host snapshot.
+                        // ApplyConfigToEntries handles both the entry values and the in-memory cache.
+                        ApplyConfigToEntries(_lastAppliedPrefs);
 
-                        _suppressEntryEvents = true;
-                        try
-                        {
-                            _enableServerAuthoritative.Value = _lastAppliedPrefs.EnableServerAuthoritativeConfig;
-                            _mixingCapacity.Value = _lastAppliedPrefs.MixingStationCapacity;
-                            _mixingSpeed.Value = _lastAppliedPrefs.MixingStationSpeed;
-                            _dryingCapacity.Value = _lastAppliedPrefs.DryingRackCapacity;
-                            if (_lastAppliedPrefs.CategoryMultipliers != null)
-                            {
-                                foreach (var kv in _lastAppliedPrefs.CategoryMultipliers)
-                                    CreateCategoryEntry(kv.Key, kv.Value).Value = kv.Value;
-                            }
-                        }
-                        finally { _suppressEntryEvents = false; }
-
-                        BetterStacksMod.EnqueueConfigUpdate(_lastAppliedPrefs);
+                        ConfigManager.EnqueueConfigUpdate(_lastAppliedPrefs);
                     }
 
                     LoggingHelper.Msg("Preference changes from client reverted; only host may edit preferences while connected.");
@@ -370,7 +378,7 @@ namespace BetterStacks.Config
                 }
 
                 _lastAppliedPrefs = current;
-                BetterStacksMod.EnqueueConfigUpdate(current);
+                ConfigManager.EnqueueConfigUpdate(current);
 
                 try
                 {

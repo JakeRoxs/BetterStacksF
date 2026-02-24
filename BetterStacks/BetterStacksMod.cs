@@ -121,23 +121,10 @@ public class BetterStacksMod : MelonMod
             prefix: new HarmonyMethod(typeof(MixingStationPatches), nameof(MixingStationPatches.PatchMixingStationCapacity))
         );
 
-        // Patch Drying Rack capacity — implementation moved to Patches/DryingRackPatches.cs
-        // Use TypeByName to avoid compile-time dependency on the class (some builds lack the
-        // DryingRackCanvas type).  AccessTools.Method gracefully handles a null type.
-        harmony.Patch(
-            AccessTools.Method(AccessTools.TypeByName("DryingRackCanvas"), "SetIsOpen"),
-            prefix: new HarmonyMethod(typeof(DryingRackPatches), nameof(DryingRackPatches.PatchDryingRackCapacity))
-        );
-
-        // Delivery stack limit handled by S1API.ApplyStackOverrides
+        // Cauldron patching: adjust slot quantities, output and cook time based on user settings.
 
     }
 
-    public static ModConfig LoadConfig()
-    {
-        // kept for backwards compatibility but forwarded to ConfigManager
-        return ConfigManager.LoadConfig();
-    }
 
     // Ensure CategoryMultipliers exists and merge legacy typed properties into the dictionary.
     // When addEnumKeys is true the method may add/prune entries based on the game's item definitions.

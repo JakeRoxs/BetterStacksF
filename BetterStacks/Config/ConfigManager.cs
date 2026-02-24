@@ -24,7 +24,8 @@ namespace BetterStacks.Config
             {
                 PreferencesMapper.EnsureRegistered();
                 var cfg = PreferencesMapper.ReadFromPreferences();
-                // maintain the legacy helper in BetterStacksMod for now
+                // ensure the helper in BetterStacksMod still runs (used by other code);
+                // can be phased out once all callers are updated
                 BetterStacksMod.EnsureCategoryMultipliers(cfg, addEnumKeys: true);
                 return cfg;
             }

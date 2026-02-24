@@ -5,22 +5,18 @@ namespace BetterStacks.Utilities
 {
     internal static class LoggingHelper
     {
-        // When building in DEBUG configuration we want all of the existing
-        // informational messages to appear; in RELEASE they should be muted so
-        // the log only contains warnings/errors and a handful of "initialisation"
-        // entries.  The verbose flag is compiled into the assembly for a cheap
-        // runtime check.
-        private static bool Verbose
-        {
-            get
-            {
+        // Controls whether the bulk of informational messages are written to the
+        // log.  In DEBUG builds the flag is initialized to true, in RELEASE builds
+        // it defaults to false, but callers may override it at runtime (e.g. via
+        // a console command or in-game setting) to enable/disable verbose output
+        // on the fly.  This replaces the previous compile‑time only `Verbose`
+        // property.
+        public static bool EnableVerbose { get; set; } =
 #if DEBUG
-                return true;
+            true;
 #else
-                return false;
+            false;
 #endif
-            }
-        }
 
         /// <summary>
         /// Removes control characters (including null) from a string so it is safe for logging.
@@ -41,13 +37,13 @@ namespace BetterStacks.Utilities
 
         /// <summary>
         /// Write a standard info message to the log, sanitizing the text first.
-        /// Only emits output when <see cref="Verbose"/> is true (typically DEBUG
-        /// builds).  In RELEASE builds the majority of informational messages are
-        /// suppressed.
+        /// Messages are only emitted when <see cref="EnableVerbose"/> is true; the
+        /// flag can be toggled at runtime to turn verbose logging on/off without a
+        /// rebuild.
         /// </summary>
         public static void Msg(string msg)
         {
-            if (Verbose)
+            if (EnableVerbose)
                 MelonLogger.Msg(SanitizeForLog(msg));
         }
 

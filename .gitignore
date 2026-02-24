@@ -369,8 +369,9 @@ FodyWeavers.xsd
 dist/
 */Published/*.zip
 
-# Ignore tools
+# Ignore tools/workspaces
 tools/
+workspaces/
 
 # Ignore Docs
 docs/
