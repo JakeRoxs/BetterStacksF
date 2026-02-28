@@ -100,9 +100,9 @@ namespace BetterStacks.Patches {
           var recipeInstance = op.Recipe;
           if (recipeInstance != null) {
             var rtype = recipeInstance.GetType();
-            var prop = rtype.GetProperty("CookTime_Mins", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
-            if (prop != null && prop.CanWrite) {
-              prop.SetValue(recipeInstance, scaled);
+            // pattern-match so analyzer knows the prop isn't null inside the block
+            if (rtype.GetProperty("CookTime_Mins", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic) is PropertyInfo p && p.CanWrite) {
+              p.SetValue(recipeInstance, scaled);
               LoggingHelper.Msg("ChemStation ScaleOperation mutated recipe property CookTime_Mins");
             }
             else {
@@ -160,26 +160,30 @@ namespace BetterStacks.Patches {
       foreach (var f in type.GetFields(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)) {
         if (f.FieldType == typeof(int)) {
           try {
-            int val = (int)f.GetValue(obj);
-            if (val == orig) {
+            var rawValue = f.GetValue(obj);
+            if (rawValue is int val && val == orig) {
               f.SetValue(obj, scaled);
               LoggingHelper.Msg($"ChemStation SetOperationTime scaled field {f.Name} {orig}->{scaled}");
             }
           }
-          catch { }
+          catch (Exception ex) {
+            LoggingHelper.Error("ChemStation SetOperationTime field reflection failed", ex);
+          }
         }
       }
       // also try CurrentTime property if for some reason it starts at orig
       var prop = type.GetProperty("CurrentTime", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
       if (prop != null && prop.CanWrite && prop.PropertyType == typeof(int)) {
         try {
-          int val = (int)prop.GetValue(obj);
-          if (val == orig) {
+          var rawValue = prop.GetValue(obj);
+          if (rawValue is int val && val == orig) {
             prop.SetValue(obj, scaled);
             LoggingHelper.Msg($"ChemStation SetOperationTime scaled property CurrentTime {orig}->{scaled}");
           }
         }
-        catch { }
+        catch (Exception ex) {
+          LoggingHelper.Error("ChemStation SetOperationTime property reflection failed", ex);
+        }
       }
     }
 
@@ -228,13 +232,18 @@ namespace BetterStacks.Patches {
       if (_scaledTable.TryGetValue(key, out var info))
         return info.value;
       try { return (int)op.Recipe.CookTime_Mins; }
-      catch { return 0; }
+      catch (Exception ex) { LoggingHelper.Error("ChemStation GetScaledTime failed to read recipe time", ex); return 0; }
     }
 
     private static int CalculateDisplayRemaining(dynamic op) {
       if (op == null) return 0;
       int recipeTime = GetScaledTime(op);
-      int rawRemaining = recipeTime - (int)op.CurrentTime;
+      int current = 0;
+      try {
+        current = (int)op.CurrentTime;
+      }
+      catch (Exception ex) { LoggingHelper.Error("ChemStation CalculateDisplayRemaining failed to read CurrentTime", ex); }
+      int rawRemaining = recipeTime - current;
       return rawRemaining < 0 ? 0 : rawRemaining;
     }
 
