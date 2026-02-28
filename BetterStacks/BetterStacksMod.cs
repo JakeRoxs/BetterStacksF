@@ -132,36 +132,120 @@ public class BetterStacksMod : MelonMod {
     var harmony = new HarmonyLib.Harmony("com.jakeroxs.betterstacks");
     FileLog.LogWriter = new StreamWriter("harmony.log") { AutoFlush = true };
 
+    // register all active patches.  only hooks which implement core
+    // functionality remain; optional canvas Start/Awake/Open patches have
+    // been removed since UpdateUI already covers those cases.
 
-
-    // Patch Mixing Station capacity — implementation moved to Patches/MixingStationPatches.cs
+    // mixing station capacity
     harmony.Patch(
         AccessTools.Method(typeof(MixingStation), "Start"),
         prefix: new HarmonyMethod(typeof(MixingStationPatches), nameof(MixingStationPatches.PatchMixingStationCapacity))
     );
 
-    // Patch Drying Rack capacity — implementation moved to Patches/DryingRackPatches.cs
+    // drying rack capacity
     harmony.Patch(
         AccessTools.Method(typeof(DryingRackCanvas), "SetIsOpen"),
         prefix: new HarmonyMethod(typeof(DryingRackPatches), nameof(DryingRackPatches.PatchDryingRackCapacity))
     );
 
-    // Cauldron patching: only adjust cook time using the StartCookOperation
-    // method.  The previous implementation patched finished operations as
-    // well but that postfix has been removed since it never contained any
-    // active logic.
+    // cauldron: patch all StartCookOperation overloads
     {
       var cauldronType = typeof(Cauldron);
-      var harmonyPrefix = new HarmonyMethod(typeof(CauldronPatches), nameof(CauldronPatches.Prefix_StartCookOperation));
-
-      // patch every overload of the start method so we catch both vanilla and
-      // RPC invocations without needing to know the exact signature.
+      var prefix = new HarmonyMethod(typeof(CauldronPatches), nameof(CauldronPatches.Prefix_StartCookOperation));
       foreach (var m in cauldronType.GetMethods(System.Reflection.BindingFlags.Instance |
                                                 System.Reflection.BindingFlags.Public |
                                                 System.Reflection.BindingFlags.NonPublic)) {
         if (m.Name == "StartCookOperation")
-          harmony.Patch(m, prefix: harmonyPrefix);
+          harmony.Patch(m, prefix: prefix);
       }
+    }
+
+    // chemistry station (ops + UI)
+    {
+      harmony.Patch(
+          AccessTools.Method(typeof(Il2CppScheduleOne.ObjectScripts.ChemistryStation), "SendCookOperation"),
+          prefix: new HarmonyMethod(typeof(ChemistryStationPatches), nameof(ChemistryStationPatches.Prefix_SendCookOperation))
+      );
+
+      harmony.Patch(
+          AccessTools.Method(typeof(Il2CppScheduleOne.ObjectScripts.ChemistryStation), "SetCookOperation"),
+          prefix: new HarmonyMethod(typeof(ChemistryStationPatches), nameof(ChemistryStationPatches.Prefix_SetCookOperation))
+      );
+      
+      harmony.Patch(
+          AccessTools.Method(typeof(Il2CppScheduleOne.ObjectScripts.ChemistryCookOperation), "Progress"),
+          prefix: new HarmonyMethod(typeof(ChemistryStationPatches), nameof(ChemistryStationPatches.Prefix_Progress))
+      );
+
+      harmony.Patch(
+          AccessTools.Method(typeof(Il2CppScheduleOne.ObjectScripts.ChemistryStation), "OnTimePass"),
+          prefix: new HarmonyMethod(typeof(ChemistryStationPatches), nameof(ChemistryStationPatches.Prefix_OnTimePass))
+      );
+      harmony.Patch(
+          AccessTools.Method(typeof(Il2CppScheduleOne.ObjectScripts.ChemistryCookOperation), "set_CurrentTime"),
+          prefix: new HarmonyMethod(typeof(ChemistryStationPatches), nameof(ChemistryStationPatches.Prefix_set_CurrentTime))
+      );
+      harmony.Patch(
+          AccessTools.Method(typeof(Il2CppScheduleOne.ObjectScripts.ChemistryStation), "FinalizeOperation"),
+          prefix: new HarmonyMethod(typeof(ChemistryStationPatches), nameof(ChemistryStationPatches.Prefix_FinalizeOperation))
+      );
+      harmony.Patch(
+          AccessTools.Method(typeof(Il2CppScheduleOne.ObjectScripts.ChemistryCookOperation), "IsComplete"),
+          postfix: new HarmonyMethod(typeof(ChemistryStationPatches), nameof(ChemistryStationPatches.Postfix_IsComplete))
+      );
+
+      // canvas UI
+      harmony.Patch(
+          AccessTools.Method(typeof(Il2CppScheduleOne.UI.Stations.ChemistryStationCanvas), "UpdateUI"),
+          postfix: new HarmonyMethod(typeof(ChemistryStationPatches), nameof(ChemistryStationPatches.Postfix_UpdateUI))
+      );
+
+      // canvas UI update patch
+      harmony.Patch(
+          AccessTools.Method(typeof(Il2CppScheduleOne.UI.Stations.ChemistryStationCanvas), "UpdateUI"),
+          postfix: new HarmonyMethod(typeof(ChemistryStationPatches), nameof(ChemistryStationPatches.Postfix_UpdateUI))
+      );
+
+
+    }
+
+    // lab oven
+    {
+      harmony.Patch(
+          AccessTools.Method(typeof(Il2CppScheduleOne.ObjectScripts.LabOven), "SendCookOperation"),
+          prefix: new HarmonyMethod(typeof(LabOvenPatches), nameof(LabOvenPatches.Prefix_SendCookOperation))
+      );
+
+      harmony.Patch(
+          AccessTools.Method(typeof(Il2CppScheduleOne.ObjectScripts.LabOven), "SetCookOperation"),
+          prefix: new HarmonyMethod(typeof(LabOvenPatches), nameof(LabOvenPatches.Prefix_SetCookOperation))
+      );
+
+      harmony.Patch(
+          AccessTools.Method(typeof(Il2CppScheduleOne.ObjectScripts.LabOven), "Update"),
+          prefix: new HarmonyMethod(typeof(LabOvenPatches), nameof(LabOvenPatches.Prefix_Update))
+      );
+
+      harmony.Patch(
+          AccessTools.Method(typeof(Il2CppScheduleOne.ObjectScripts.LabOven), "OnTimePass"),
+          prefix: new HarmonyMethod(typeof(LabOvenPatches), nameof(LabOvenPatches.Prefix_OnTimePass))
+      );
+
+      // intercept operation duration getter
+      harmony.Patch(
+          AccessTools.Method(typeof(Il2CppScheduleOne.ObjectScripts.OvenCookOperation), "GetCookDuration"),
+          postfix: new HarmonyMethod(typeof(LabOvenPatches), nameof(LabOvenPatches.Postfix_GetCookDuration))
+      );
+
+      // patch StartLabOvenTask methods
+      harmony.Patch(
+          AccessTools.Method(typeof(Il2CppScheduleOne.PlayerTasks.StartLabOvenTask), "CheckProgress"),
+          prefix: new HarmonyMethod(typeof(LabOvenPatches), nameof(LabOvenPatches.Prefix_StartLabOvenTask_CheckProgress))
+      );
+      harmony.Patch(
+          AccessTools.Method(typeof(Il2CppScheduleOne.PlayerTasks.StartLabOvenTask), "ProgressStep"),
+          prefix: new HarmonyMethod(typeof(LabOvenPatches), nameof(LabOvenPatches.Prefix_StartLabOvenTask_ProgressStep))
+      );
     }
 
   }

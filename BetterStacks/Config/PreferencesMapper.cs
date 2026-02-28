@@ -25,6 +25,8 @@ namespace BetterStacks.Config {
     private static MelonPreferences_Entry<int> _dryingCapacity = null!;
     private static MelonPreferences_Entry<int> _cauldronMultiplier = null!;
     private static MelonPreferences_Entry<int> _cauldronCookSpeed = null!;
+    private static MelonPreferences_Entry<int> _chemistrySpeed = null!;
+    private static MelonPreferences_Entry<int> _labOvenSpeed = null!;
 
     private static readonly Dictionary<string, MelonPreferences_Entry<int>> _categoryEntries = new();
     private static readonly Dictionary<string, int> _categoryMultiplierValues = new();
@@ -41,8 +43,10 @@ namespace BetterStacks.Config {
             "MixingStationSpeed",
             "DryingRackCapacity",
             "CauldronIngredientMultiplier",
-            "CauldronCookSpeed"
-        };
+            "CauldronCookSpeed",
+            "ChemistryStationSpeed",
+            "LabOvenSpeed"
+    };
 
     /// <summary>
     /// Remove any entries from <see cref="ModConfig.CategoryMultipliers"/> whose
@@ -196,11 +200,19 @@ namespace BetterStacks.Config {
 
         _cauldronMultiplier = _prefsCategory.CreateEntry("CauldronIngredientMultiplier", 1,
             "Cauldron ingredient multiplier",
-            "Multiplies the quantity able to be cooked (coca leaves) and the resulting output amount.");
+            "(TODO)Multiplies the quantity able to be cooked (coca leaves) and the resulting output amount.");
 
         _cauldronCookSpeed = _prefsCategory.CreateEntry("CauldronCookSpeed", 1,
             "Cauldron cook speed multiplier",
             "Divides the cooking time when a cauldron starts a recipe, higher values make cooking faster.");
+
+        _chemistrySpeed = _prefsCategory.CreateEntry("ChemistryStationSpeed", 1,
+            "Chemistry station speed multiplier",
+            "Divides the minute tick passed to chemistry stations; higher values make chemistry operations run faster.");
+
+        _labOvenSpeed = _prefsCategory.CreateEntry("LabOvenSpeed", 1,
+            "Lab oven speed multiplier",
+            "Divides the minute tick passed to lab ovens; higher values make oven operations run faster.");
       }
       catch (Exception ex) {
         LoggingHelper.Error("InitializeCoreEntries failed", ex);
@@ -240,6 +252,16 @@ namespace BetterStacks.Config {
         _cauldronCookSpeed.OnEntryValueChanged.Subscribe(OnEntryChanged);
       else
         LoggingHelper.Warning("PreferencesMapper: _cauldronCookSpeed entry not initialized");
+
+      if (_chemistrySpeed != null)
+        _chemistrySpeed.OnEntryValueChanged.Subscribe(OnEntryChanged);
+      else
+        LoggingHelper.Warning("PreferencesMapper: _chemistrySpeed entry not initialized");
+
+      if (_labOvenSpeed != null)
+        _labOvenSpeed.OnEntryValueChanged.Subscribe(OnEntryChanged);
+      else
+        LoggingHelper.Warning("PreferencesMapper: _labOvenSpeed entry not initialized");
     }
 
     private static bool AreCoreEntriesInitialized() {
@@ -248,7 +270,9 @@ namespace BetterStacks.Config {
              _mixingSpeed != null &&
              _dryingCapacity != null &&
              _cauldronMultiplier != null &&
-             _cauldronCookSpeed != null;
+             _cauldronCookSpeed != null &&
+             _chemistrySpeed != null &&
+             _labOvenSpeed != null;
     }
 
     private static void LoadExistingCategoryEntries() {
@@ -329,6 +353,8 @@ namespace BetterStacks.Config {
           DryingRackCapacity = _dryingCapacity.Value,
           CauldronIngredientMultiplier = _cauldronMultiplier.Value,
           CauldronCookSpeed = _cauldronCookSpeed.Value,
+          ChemistryStationSpeed = _chemistrySpeed.Value,
+          LabOvenSpeed = _labOvenSpeed.Value,
           CategoryMultipliers = new Dictionary<string, int>()
         };
 
@@ -361,6 +387,8 @@ namespace BetterStacks.Config {
           _dryingCapacity.Value = cfg.DryingRackCapacity;
           _cauldronMultiplier.Value = cfg.CauldronIngredientMultiplier;
           _cauldronCookSpeed.Value = cfg.CauldronCookSpeed;
+          _chemistrySpeed.Value = cfg.ChemistryStationSpeed;
+          _labOvenSpeed.Value = cfg.LabOvenSpeed;
         }
 
         _categoryMultiplierValues.Clear();
@@ -440,6 +468,8 @@ namespace BetterStacks.Config {
       if (a.DryingRackCapacity != b.DryingRackCapacity) return false;
       if (a.CauldronIngredientMultiplier != b.CauldronIngredientMultiplier) return false;
       if (a.CauldronCookSpeed != b.CauldronCookSpeed) return false;
+      if (a.ChemistryStationSpeed != b.ChemistryStationSpeed) return false;
+      if (a.LabOvenSpeed != b.LabOvenSpeed) return false;
 
       var da = a.CategoryMultipliers ?? new Dictionary<string, int>();
       var db = b.CategoryMultipliers ?? new Dictionary<string, int>();

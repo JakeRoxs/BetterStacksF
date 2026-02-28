@@ -17,6 +17,8 @@ namespace BetterStacks.Config {
     public int MixingStationSpeed { get; set; } = 1;
     public int DryingRackCapacity { get; set; } = 3;
     public int CauldronIngredientMultiplier { get; set; } = 1;
-    public int CauldronCookSpeed { get; set; } = 1;  // divisor for cook time (higher = faster)
+    public int CauldronCookSpeed { get; set; } = 1;
+    public int ChemistryStationSpeed { get; set; } = 1;
+    public int LabOvenSpeed { get; set; } = 1;
   }
 }
