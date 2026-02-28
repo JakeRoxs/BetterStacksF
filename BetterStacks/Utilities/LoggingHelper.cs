@@ -1,6 +1,7 @@
 using System;
 
 using MelonLoader;
+
 using Newtonsoft.Json;
 
 namespace BetterStacks.Utilities {
@@ -92,13 +93,14 @@ namespace BetterStacks.Utilities {
 
       try {
         return JsonConvert.SerializeObject(obj, indented ? Formatting.Indented : Formatting.None);
-      } catch (Exception ex) {
-        // Log any serialization problems so callers don't have to worry about
-        // catching them. If the failure occurs inside Serialize we would
-        // otherwise recurse back into this method and quickly blow the stack.
-        // Instead, write directly to MelonLogger and sanitize the message so
-        // that even malformed text can't trigger further errors.
-        MelonLogger.Error(SanitizeForLog("Serialize failed: " + ex));
+      }
+      catch (Exception ex) {
+        // Problems during serialization shouldn't propagate to callers, and
+        // if we attempt to log via our normal helpers we risk re‑entering
+        // Serialize and blowing the stack.  The SafeLogError(msg, ex)
+        // overload writes straight to MelonLogger and sanitizes its input so
+        // the failure can be recorded without triggering another exception.
+        SafeLogError("Serialize failed", ex);
         return string.Empty;
       }
     }
@@ -113,9 +115,10 @@ namespace BetterStacks.Utilities {
 
       try {
         return JsonConvert.DeserializeObject<T>(json);
-      } catch (Exception ex) {
+      }
+      catch (Exception ex) {
         // A malformed or unexpected JSON string shouldn't crash the caller.
-        Error("Deserialize failed", ex);
+        SafeLogError("Deserialize failed", ex);
         return default;
       }
     }
@@ -162,6 +165,16 @@ namespace BetterStacks.Utilities {
     /// output (stack trace, inner exceptions) will be sanitized and logged.
     /// </param>
     public static void Error(string msg, Exception ex)
+        => MelonLogger.Error(SanitizeForLog(msg) + "\n" + SanitizeForLog(ex.ToString()));
+
+    // Helper used internally by the serialization methods to avoid recursive
+    // calls into Serialize/Deserialize.  This writes directly to MelonLogger
+    // and sanitizes the message so that the act of logging cannot itself
+    // trigger another exception.
+    private static void SafeLogError(string msg) => MelonLogger.Error(SanitizeForLog(msg));
+
+    // alternate overload with exception for convenience
+    private static void SafeLogError(string msg, Exception ex)
         => MelonLogger.Error(SanitizeForLog(msg) + "\n" + SanitizeForLog(ex.ToString()));
   }
 }

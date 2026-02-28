@@ -132,9 +132,7 @@ public class BetterStacksMod : MelonMod {
     var harmony = new HarmonyLib.Harmony("com.jakeroxs.betterstacks");
     FileLog.LogWriter = new StreamWriter("harmony.log") { AutoFlush = true };
 
-    // register all active patches.  only hooks which implement core
-    // functionality remain; optional canvas Start/Awake/Open patches have
-    // been removed since UpdateUI already covers those cases.
+    // register all active patches
 
     // mixing station capacity
     harmony.Patch(
@@ -171,45 +169,23 @@ public class BetterStacksMod : MelonMod {
           AccessTools.Method(typeof(Il2CppScheduleOne.ObjectScripts.ChemistryStation), "SetCookOperation"),
           prefix: new HarmonyMethod(typeof(ChemistryStationPatches), nameof(ChemistryStationPatches.Prefix_SetCookOperation))
       );
-      
-      harmony.Patch(
-          AccessTools.Method(typeof(Il2CppScheduleOne.ObjectScripts.ChemistryCookOperation), "Progress"),
-          prefix: new HarmonyMethod(typeof(ChemistryStationPatches), nameof(ChemistryStationPatches.Prefix_Progress))
-      );
 
-      harmony.Patch(
-          AccessTools.Method(typeof(Il2CppScheduleOne.ObjectScripts.ChemistryStation), "OnTimePass"),
-          prefix: new HarmonyMethod(typeof(ChemistryStationPatches), nameof(ChemistryStationPatches.Prefix_OnTimePass))
-      );
-      harmony.Patch(
-          AccessTools.Method(typeof(Il2CppScheduleOne.ObjectScripts.ChemistryCookOperation), "set_CurrentTime"),
-          prefix: new HarmonyMethod(typeof(ChemistryStationPatches), nameof(ChemistryStationPatches.Prefix_set_CurrentTime))
-      );
       harmony.Patch(
           AccessTools.Method(typeof(Il2CppScheduleOne.ObjectScripts.ChemistryStation), "FinalizeOperation"),
           prefix: new HarmonyMethod(typeof(ChemistryStationPatches), nameof(ChemistryStationPatches.Prefix_FinalizeOperation))
       );
-      harmony.Patch(
-          AccessTools.Method(typeof(Il2CppScheduleOne.ObjectScripts.ChemistryCookOperation), "IsComplete"),
-          postfix: new HarmonyMethod(typeof(ChemistryStationPatches), nameof(ChemistryStationPatches.Postfix_IsComplete))
-      );
-
-      // canvas UI
-      harmony.Patch(
-          AccessTools.Method(typeof(Il2CppScheduleOne.UI.Stations.ChemistryStationCanvas), "UpdateUI"),
-          postfix: new HarmonyMethod(typeof(ChemistryStationPatches), nameof(ChemistryStationPatches.Postfix_UpdateUI))
-      );
-
-      // canvas UI update patch
-      harmony.Patch(
-          AccessTools.Method(typeof(Il2CppScheduleOne.UI.Stations.ChemistryStationCanvas), "UpdateUI"),
-          postfix: new HarmonyMethod(typeof(ChemistryStationPatches), nameof(ChemistryStationPatches.Postfix_UpdateUI))
-      );
-
-
     }
 
-    // lab oven
+    // lab oven scaling is handled when cook operations are created, so only
+    // SendCookOperation and SetCookOperation need to be patched here.
+    // LabOven:
+    // - Scaling is applied when cook operations are created, not during finalization.
+    // - SendCookOperation is called on the host when it creates a new cook operation and
+    //   sends it to clients over the network.
+    // - SetCookOperation is called on clients when they receive the replicated cook operation
+    //   from the host and apply it locally.
+    // Patching these two points keeps host/client behavior in sync, so no FinalizeOperation
+    // patch is required for LabOven.
     {
       harmony.Patch(
           AccessTools.Method(typeof(Il2CppScheduleOne.ObjectScripts.LabOven), "SendCookOperation"),
@@ -220,33 +196,8 @@ public class BetterStacksMod : MelonMod {
           AccessTools.Method(typeof(Il2CppScheduleOne.ObjectScripts.LabOven), "SetCookOperation"),
           prefix: new HarmonyMethod(typeof(LabOvenPatches), nameof(LabOvenPatches.Prefix_SetCookOperation))
       );
-
-      harmony.Patch(
-          AccessTools.Method(typeof(Il2CppScheduleOne.ObjectScripts.LabOven), "Update"),
-          prefix: new HarmonyMethod(typeof(LabOvenPatches), nameof(LabOvenPatches.Prefix_Update))
-      );
-
-      harmony.Patch(
-          AccessTools.Method(typeof(Il2CppScheduleOne.ObjectScripts.LabOven), "OnTimePass"),
-          prefix: new HarmonyMethod(typeof(LabOvenPatches), nameof(LabOvenPatches.Prefix_OnTimePass))
-      );
-
-      // intercept operation duration getter
-      harmony.Patch(
-          AccessTools.Method(typeof(Il2CppScheduleOne.ObjectScripts.OvenCookOperation), "GetCookDuration"),
-          postfix: new HarmonyMethod(typeof(LabOvenPatches), nameof(LabOvenPatches.Postfix_GetCookDuration))
-      );
-
-      // patch StartLabOvenTask methods
-      harmony.Patch(
-          AccessTools.Method(typeof(Il2CppScheduleOne.PlayerTasks.StartLabOvenTask), "CheckProgress"),
-          prefix: new HarmonyMethod(typeof(LabOvenPatches), nameof(LabOvenPatches.Prefix_StartLabOvenTask_CheckProgress))
-      );
-      harmony.Patch(
-          AccessTools.Method(typeof(Il2CppScheduleOne.PlayerTasks.StartLabOvenTask), "ProgressStep"),
-          prefix: new HarmonyMethod(typeof(LabOvenPatches), nameof(LabOvenPatches.Prefix_StartLabOvenTask_ProgressStep))
-      );
     }
+
 
   }
 
@@ -363,10 +314,5 @@ public class BetterStacksMod : MelonMod {
     // forward pending config processing to manager
     ConfigManager.ProcessPendingUpdates();
   }
-
-
-
-
-
 
 }
