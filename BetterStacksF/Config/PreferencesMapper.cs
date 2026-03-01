@@ -1,4 +1,5 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -180,9 +181,31 @@ namespace BetterStacksF.Config {
       }
     }
 
+    // debounce helper used by OnEntryChanged.  many UI interactions (see
+    // ModsApp) end up flipping several entries one after the other; without
+    // aggregation we log a separate diff for each field and apply the
+    // configuration repeatedly.  schedule a single "apply" at the end of the
+    // current frame instead, which gives the UI enough time to finish its
+    // batch and produces one cohesive diff.
+    private static bool _applyScheduled;
+
+    private static IEnumerator ApplyPreferencesLater() {
+      // yield once so that any immediately following entry-change events can
+      // fire before we read the preferences.  using MelonCoroutines keeps us
+      // on the game thread and avoids needing a timer.
+      yield return null;
+      _applyScheduled = false;
+      ApplyPreferencesNow(persist: false);
+    }
+
     private static void OnEntryChanged<T>(T oldValue, T newValue) {
-      if (!_suppressEntryEvents)
-        ApplyPreferencesNow(persist: false);
+      if (_suppressEntryEvents)
+        return;
+
+      if (!_applyScheduled) {
+        _applyScheduled = true;
+        MelonCoroutines.Start(ApplyPreferencesLater());
+      }
     }
 
     private static void InitializeCoreEntries() {
@@ -391,8 +414,7 @@ namespace BetterStacksF.Config {
         // added later (common during the first registration pass).
         var keys = cfg.CategoryMultipliers.Keys.ToList();
         foreach (var k in keys) {
-          if (cfg.CategoryMultipliers[k] < 1)
-            cfg.CategoryMultipliers[k] = 1;
+          cfg.CategoryMultipliers[k] = NormalizeMultiplier(cfg.CategoryMultipliers[k]);
         }
 
         return cfg;
@@ -571,9 +593,9 @@ namespace BetterStacksF.Config {
       foreach (var k in allKeys) {
         bool hasB = ba.TryGetValue(k, out var bv);
         bool hasA = aa.TryGetValue(k, out var av);
-        // treat a zero value as effectively 'missing'
-        if (hasB && bv <= 0) hasB = false;
-        if (hasA && av <= 0) hasA = false;
+        // treat an effectively-missing value the same way in both configs
+        if (hasB && MultiplierIsMissing(bv)) hasB = false;
+        if (hasA && MultiplierIsMissing(av)) hasA = false;
 
         if (!hasB && hasA) {
           sb.AppendLine($"  Category[{k}]: <added> {av}");
@@ -636,6 +658,14 @@ namespace BetterStacksF.Config {
         LoggingHelper.Warning($"ApplyPreferencesNow failed: {ex.Message}");
       }
     }
+
+    // multiplier helpers --------------------------------------------------
+    // these encapsulate the business rule that any multiplier less than 1 is
+    // considered equivalent to "absent" when reading or diffing.  centralizing
+    // the logic here prevents the two call sites from drifting apart.
+
+    private static int NormalizeMultiplier(int value) => value < 1 ? 1 : value;
+    private static bool MultiplierIsMissing(int value) => value < 1;
 
     public static int? GetSavedOriginalStackLimit(string defId) => OriginalStackTracker.GetSavedOriginalStackLimit(defId);
     public static void PersistOriginalStackLimit(string defId, int originalLimit) => OriginalStackTracker.PersistOriginalStackLimit(defId, originalLimit);
