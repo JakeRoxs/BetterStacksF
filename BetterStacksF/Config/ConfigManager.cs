@@ -11,6 +11,7 @@ namespace BetterStacksF.Config {
   /// </summary>
   internal static class ConfigManager {
     private static ModConfig _config = new ModConfig();
+    private static bool _loggedInitialLoad = false; // prevent duplicate logging
     private static readonly Queue<ModConfig> _pendingConfigs = new Queue<ModConfig>();
     // cache the most-recently enqueued config to avoid iterating the queue
     private static ModConfig? _lastPendingConfig;
@@ -24,7 +25,9 @@ namespace BetterStacksF.Config {
       // validation/initialisation (e.g. category sync).
       try {
         PreferencesMapper.EnsureRegistered();
-        var cfg = PreferencesMapper.ReadFromPreferences();
+        // after registration we may already have a cached copy from the
+        // initial ReadFromPreferences call; use it to avoid duplicating work.
+        var cfg = PreferencesMapper.GetCachedPreferences() ?? PreferencesMapper.ReadFromPreferences();
         // sanitize any strange keys that may have made it into prefs; this
         // also handles the case where the ModsApp UI has gone wrong.
         PreferencesMapper.SanitizeCategoryKeys(cfg);
@@ -36,9 +39,11 @@ namespace BetterStacksF.Config {
         // mirror verbose logging flag to the helper so it takes effect
         LoggingHelper.EnableVerbose = cfg.EnableVerboseLogging;
 
-        // log that we've finished loading the configuration from prefs; this
-        // will appear in init-level logs so release builds will show it.
-        LoggingHelper.Init("Configuration loaded", cfg);
+        // log once only; subsequent calls may return the same object
+        if (!_loggedInitialLoad) {
+          LoggingHelper.Init("Configuration loaded:\n" + PreferencesMapper.DescribeConfig(cfg));
+          _loggedInitialLoad = true;
+        }
 
         return cfg;
       }

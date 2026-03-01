@@ -123,10 +123,10 @@ public class BetterStacksFMod : MelonMod {
       LoggingHelper.Init("SteamNetworkAdapter initialized.");
     }
 
-    // Log the loaded configuration so we can verify which category multipliers are active at runtime.
-    // This message respects the verbose-logging preference, so end users may
-    // enable it at runtime when investigating issues.
-    LoggingHelper.Msg("Loaded config", cfg);
+    // configuration logging is already handled by ConfigManager; the
+    // previous call produces a nicely formatted snapshot.  suppress this
+    // duplicate message to keep startup output brief.
+
 
     // If we're the session host, immediately broadcast the authoritative HostConfig so clients apply the same settings.
     if (NetworkingManager.CurrentAdapter?.IsHost ?? false) {
@@ -206,21 +206,10 @@ public class BetterStacksFMod : MelonMod {
 
   }
 
-  // `OnPreferencesSaved` is overridden purely to emit a log message showing
-  // the before/after config state.  PreferencesMapper already performs the
-  // actual load/apply work (see EnsureRegistered/ApplyPreferencesNow)
+  // Keep _lastPrefs in sync when MelonLoader saves preferences.
+  // Detailed logging and diffing is handled by PreferencesMapper / ApplyPreferencesNow.
   public override void OnPreferencesSaved() {
-    // caller (MelonLoader) has just written the preferences file.  Read the
-    // new values and compare with what we last knew, logging the delta if
-    // anything changed.
-    var before = _lastPrefs;
-    var after = PreferencesMapper.ReadFromPreferences();
-    if (!PreferencesMapper.AreConfigsEqual(before, after)) {
-      LoggingHelper.Init(
-          "Preferences saved",
-          new { previous = before, current = after });
-    }
-    _lastPrefs = after;
+    _lastPrefs = PreferencesMapper.ReadFromPreferences();
   }
 
   // Ensure CategoryMultipliers exists and merge legacy typed properties into the dictionary.

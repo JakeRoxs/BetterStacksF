@@ -31,7 +31,9 @@ namespace BetterStacksF.Utilities {
         return string.Empty;
       var builder = new System.Text.StringBuilder(s.Length);
       foreach (char c in s) {
-        if (c >= 0x20) // drop control codes (including '\0')
+        // retain printable characters plus newline and carriage return so
+        // multi-line messages (e.g. configuration diffs) remain readable.
+        if (c >= 0x20 || c == '\n' || c == '\r')
           builder.Append(c);
       }
       return builder.ToString();

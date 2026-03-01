@@ -28,7 +28,9 @@ namespace BetterStacksF.Config {
           GameLifecycle.OnPreLoad += () => {
             try { RegisterCategoryMultipliersFromGameDefs(); } catch { }
           };
-          LoggingHelper.Msg("Item definitions not ready yet, scheduled category registration for OnPreLoad.");
+          // we deliberately do not log here; the general "item definitions not
+          // ready" message from the stack override manager is sufficient and
+          // avoids spamming the log when verbose logging is enabled.
         }
         return;
       }
@@ -57,10 +59,9 @@ namespace BetterStacksF.Config {
 
             cfg.CategoryMultipliers[name] = dv;
             madeChanges = true;
-            // this message is useful when investigating why categories are being
-            // added; it respects the verbose-logging preference so users can
-            // turn it on selectively.
-            LoggingHelper.Msg($"Added CategoryMultiplier key for '{name}' with default={dv}");
+            // log at verbose level; this is strictly about category bookkeeping
+            // and can safely be hidden in normal operation.
+            LoggingHelper.Msg($"CategoryMultiplier '{name}' added (default {dv})");
           }
         }
 

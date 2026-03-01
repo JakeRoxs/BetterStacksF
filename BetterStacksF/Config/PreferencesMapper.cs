@@ -43,6 +43,12 @@ namespace BetterStacksF.Config {
     private static readonly Dictionary<string, int> _categoryMultiplierValues = new();
 
     private static ModConfig? _lastAppliedPrefs = null;
+
+    /// <summary>
+    /// Returns the most recently read preferences without touching disk.  May
+    /// be <c>null</c> if no read has occurred yet.
+    /// </summary>
+    internal static ModConfig? GetCachedPreferences() => _lastAppliedPrefs;
     private static bool _registered = false;
     private static bool _initialized = false;
     private static bool _suppressEntryEvents = false;
@@ -380,6 +386,15 @@ namespace BetterStacksF.Config {
         // guard against any malformed entries (empty key, whitespace, etc.)
         SanitizeCategoryKeys(cfg);
 
+        // clamp any zero or negative multipliers to 1 so they behave like
+        // missing values.  this prevents diffs showing 0 -> N when a key is
+        // added later (common during the first registration pass).
+        var keys = cfg.CategoryMultipliers.Keys.ToList();
+        foreach (var k in keys) {
+          if (cfg.CategoryMultipliers[k] < 1)
+            cfg.CategoryMultipliers[k] = 1;
+        }
+
         return cfg;
       }
       catch (Exception ex) {
@@ -478,7 +493,13 @@ namespace BetterStacksF.Config {
       return entry;
     }
 
-    public static bool AreConfigsEqual(ModConfig a, ModConfig b) {
+    public static bool AreConfigsEqual(ModConfig? a, ModConfig? b) {
+      // treat object identity and nulls first to avoid nullref exceptions
+      if (ReferenceEquals(a, b))
+        return true;
+      if (a == null || b == null)
+        return false;
+
       if (a.EnableServerAuthoritativeConfig != b.EnableServerAuthoritativeConfig) return false;
       if (a.MixingStationCapacity != b.MixingStationCapacity) return false;
       if (a.MixingStationSpeed != b.MixingStationSpeed) return false;
@@ -497,6 +518,75 @@ namespace BetterStacksF.Config {
       return true;
     }
 
+    // helpers for logging
+    public static string DescribeConfig(ModConfig? cfg) {
+      if (cfg == null)
+        return "<null>";
+      var sb = new System.Text.StringBuilder();
+      sb.AppendLine($"EnableServerAuthoritativeConfig: {cfg.EnableServerAuthoritativeConfig}");
+      sb.AppendLine($"MixingStationCapacity: {cfg.MixingStationCapacity}");
+      sb.AppendLine($"MixingStationSpeed: {cfg.MixingStationSpeed}");
+      sb.AppendLine($"DryingRackCapacity: {cfg.DryingRackCapacity}");
+      sb.AppendLine($"CauldronIngredientMultiplier: {cfg.CauldronIngredientMultiplier}");
+      sb.AppendLine($"CauldronCookSpeed: {cfg.CauldronCookSpeed}");
+      sb.AppendLine($"ChemistryStationSpeed: {cfg.ChemistryStationSpeed}");
+      sb.AppendLine($"LabOvenSpeed: {cfg.LabOvenSpeed}");
+      if (cfg.CategoryMultipliers != null && cfg.CategoryMultipliers.Count > 0) {
+        sb.AppendLine("CategoryMultipliers:");
+        foreach (var kv in cfg.CategoryMultipliers) {
+          sb.AppendLine($"  {kv.Key}: {kv.Value}");
+        }
+      }
+      return sb.ToString();
+    }
+
+    public static string FormatConfigDiff(ModConfig? before, ModConfig? after) {
+      if (ReferenceEquals(before, after))
+        return "(no change)";
+      if (before == null)
+        return "initial configuration:\n" + DescribeConfig(after);
+      if (after == null)
+        return "configuration cleared";
+
+      var sb = new System.Text.StringBuilder();
+      void diff<T>(string name, T b, T a) {
+        if (!EqualityComparer<T>.Default.Equals(b, a))
+          sb.AppendLine($"  {name}: {b} -> {a}");
+      }
+
+      diff("EnableServerAuthoritativeConfig", before.EnableServerAuthoritativeConfig, after.EnableServerAuthoritativeConfig);
+      diff("MixingStationCapacity", before.MixingStationCapacity, after.MixingStationCapacity);
+      diff("MixingStationSpeed", before.MixingStationSpeed, after.MixingStationSpeed);
+      diff("DryingRackCapacity", before.DryingRackCapacity, after.DryingRackCapacity);
+      diff("CauldronIngredientMultiplier", before.CauldronIngredientMultiplier, after.CauldronIngredientMultiplier);
+      diff("CauldronCookSpeed", before.CauldronCookSpeed, after.CauldronCookSpeed);
+      diff("ChemistryStationSpeed", before.ChemistryStationSpeed, after.ChemistryStationSpeed);
+      diff("LabOvenSpeed", before.LabOvenSpeed, after.LabOvenSpeed);
+
+      // categories
+      var ba = before.CategoryMultipliers ?? new Dictionary<string, int>();
+      var aa = after.CategoryMultipliers ?? new Dictionary<string, int>();
+      var allKeys = new HashSet<string>(ba.Keys);
+      allKeys.UnionWith(aa.Keys);
+      foreach (var k in allKeys) {
+        bool hasB = ba.TryGetValue(k, out var bv);
+        bool hasA = aa.TryGetValue(k, out var av);
+        // treat a zero value as effectively 'missing'
+        if (hasB && bv <= 0) hasB = false;
+        if (hasA && av <= 0) hasA = false;
+
+        if (!hasB && hasA) {
+          sb.AppendLine($"  Category[{k}]: <added> {av}");
+        } else if (hasB && !hasA) {
+          sb.AppendLine($"  Category[{k}]: <removed> {bv}");
+        } else if (bv != av) {
+          sb.AppendLine($"  Category[{k}]: {bv} -> {av}");
+        }
+      }
+
+      return sb.Length == 0 ? "(no sensible changes)" : sb.ToString();
+    }
+
     public static void ApplyPreferencesNow(bool persist = true) {
       try {
         EnsureRegistered();
@@ -513,7 +603,9 @@ namespace BetterStacksF.Config {
         if (_lastAppliedPrefs != null && AreConfigsEqual(_lastAppliedPrefs, current))
           return;
 
-        LoggingHelper.Msg($"Preference change detected: previous={LoggingHelper.Serialize(_lastAppliedPrefs)}, new={LoggingHelper.Serialize(current)}");
+        // log a compact diff instead of full JSON dumps
+        var diffText = FormatConfigDiff(_lastAppliedPrefs, current);
+        LoggingHelper.Msg("Preference change detected:\n" + diffText);
 
         if (MultiplayerHelper.IsClientInMultiplayer()) {
           if (_lastAppliedPrefs != null) {
