@@ -7,7 +7,13 @@ project might one day adhere to [Semantic Versioning](https://semver.org/spec/v2
 
 ## [Unreleased]
 ### User-facing
-- 
+
+## [0.0.7] - 2026-03-01
+### User-facing
+- Preserve user-provided values in cfg on startup
+
+### Developer
+- Refactor configuration loading to optimize preference handling, reduce redundant disk reads, and resolve issues with default values overriding user-supplied values
 
 ## [0.0.6] - 2026-02-28
 ### User-facing
@@ -76,7 +82,8 @@ project might one day adhere to [Semantic Versioning](https://semver.org/spec/v2
   and the initial migration to MelonPreferences.
 
 
-[Unreleased]: https://github.com/JakeRoxs/BetterStacksF/compare/v0.0.6...HEAD
+[Unreleased]: https://github.com/JakeRoxs/BetterStacksF/compare/v0.0.7...HEAD
+[0.0.7]: https://github.com/JakeRoxs/BetterStacksF/compare/v0.0.6...v0.0.7
 [0.0.6]: https://github.com/JakeRoxs/BetterStacksF/compare/v0.0.5...v0.0.6
 [0.0.4]: https://github.com/JakeRoxs/BetterStacksF/compare/v0.0.3...v0.0.4
 [0.0.3]: https://github.com/JakeRoxs/BetterStacksF/compare/v0.0.2...v0.0.3
