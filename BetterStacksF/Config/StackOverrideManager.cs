@@ -50,13 +50,15 @@ namespace BetterStacksF.Config {
 
         var allDefs = defsCheck.ToList();
 
-#if DEBUG
-        LogDebugDiagnostics(allDefs, cfg);
-#endif
+        if (LoggingHelper.EnableVerbose)
+        {
+            LogDebugDiagnostics(allDefs, cfg);
+        }
 
         EnsureStackableCache(allDefs);
         int totalStackables = _stackablesByCategory.Values.Sum(list => list.Count);
         LoggingHelper.Msg($"Found {totalStackables} item definitions with StackLimit (cached) at ApplyStackOverrides");
+
 
         var processedByCategory = new Dictionary<EItemCategory, int>();
         var changedByCategory = new Dictionary<EItemCategory, int>();
@@ -96,9 +98,7 @@ namespace BetterStacksF.Config {
 
             if ((def.Name != null && def.Name.IndexOf("effect", StringComparison.OrdinalIgnoreCase) >= 0)
                 || defType.Name.IndexOf("Effect", StringComparison.OrdinalIgnoreCase) >= 0) {
-#if DEBUG
-              LoggingHelper.Msg($"Skipping non-stackable effect definition: {def.Name} ({defType.Name})");
-#endif
+        LoggingHelper.Msg($"Skipping non-stackable effect definition: {def.Name} ({defType.Name})");
               continue;
             }
 
@@ -130,10 +130,8 @@ namespace BetterStacksF.Config {
 
                 if (prevCatMod != currentMod && prevCatMod > 0) {
                   int adjusted = Math.Max(1, (int)Math.Round(currentStack * ((double)currentMod / prevCatMod)));
-#if DEBUG
                   LoggingHelper.Msg($"Adjusted newly-created {def.Name} ({category}) stack limit from {currentStack} to {adjusted} " +
                                   $"(oldMod={prevCatMod}, newMod={currentMod})");
-#endif
                   ReflectionHelper.TrySetStackLimit(def, adjusted);
                   currentStack = adjusted;
                 }
@@ -143,9 +141,7 @@ namespace BetterStacksF.Config {
                 PreferencesMapper.PersistOriginalStackLimit(def.ID, orig);
                 capturedThisRun = true;
                 capturedCategories.Add(category);
-#if DEBUG
                 LoggingHelper.Msg($"Recorded original StackLimit for new definition '{def.Name}' (ID={def.ID}) = {orig}");
-#endif
               }
             }
 
@@ -171,9 +167,7 @@ namespace BetterStacksF.Config {
               if (list.Count < 10)
                 list.Add($"{def.Name}(current {currentStack}->{newLimit}, orig {originalLimit})");
 
-#if DEBUG
               LoggingHelper.Msg($"Set {def.Name} ({def.Category}) stack limit from {currentStack} to {newLimit}");
-#endif
 
               if (!ReflectionHelper.TrySetStackLimit(def, newLimit))
                 LoggingHelper.Warning($"Cannot set StackLimit on {def.Name} ({defType.Name}) — member is read-only.");
@@ -247,8 +241,8 @@ namespace BetterStacksF.Config {
       }
     }
 
-#if DEBUG
     private static void LogDebugDiagnostics(List<S1API.Items.ItemDefinition> allDefs, ModConfig cfg) {
+      if (!LoggingHelper.EnableVerbose) return;
       var categoryCounts = allDefs.GroupBy(d => (EItemCategory)d.Category).ToDictionary(g => g.Key, g => g.Count());
       LoggingHelper.Msg($"ItemManager total definitions={allDefs.Count}, categories present={string.Join(", ", categoryCounts.Select(kv => kv.Key + "=" + kv.Value))}");
       var presentNames = categoryCounts.Keys.Select(k => k.ToString()).ToHashSet(StringComparer.OrdinalIgnoreCase);
@@ -276,6 +270,6 @@ namespace BetterStacksF.Config {
         }
       }
     }
-#endif
+
   }
 }

@@ -24,9 +24,10 @@ namespace BetterStacksF.Patches {
     private static readonly System.Collections.Generic.HashSet<Type> _loggedTypes
         = new System.Collections.Generic.HashSet<Type>();
 
-#if DEBUG
     // debug helper: print all fields/properties of an operation type once so
     // we can identify the relevant duration field without flooding the log.
+    // The method is always compiled but callers should check
+    // <see cref="LoggingHelper.EnableVerbose"/> to avoid unnecessary work.
     private static void DumpOperation(object op) {
       if (op == null) return;
       var type = op.GetType();
@@ -42,7 +43,6 @@ namespace BetterStacksF.Patches {
         try { LoggingHelper.Msg($" prop {p.Name} ({p.PropertyType.Name}) = {p.GetValue(op)}"); } catch { }
       }
     }
-#endif
 
     // apply multiplier when an oven operation is created (local or via RPC)
     private static void ScaleOperation(dynamic op) {
@@ -59,14 +59,14 @@ namespace BetterStacksF.Patches {
         // property (an int) and adjust it directly.
         // dump fields/properties of the operation so we can see where the
         // true duration lives.  this will log a bunch of data on first call.
-#if DEBUG
-        try {
-          DumpOperation((object)op);
+        if (LoggingHelper.EnableVerbose) {
+          try {
+            DumpOperation((object)op);
+          }
+          catch (Exception e) {
+            LoggingHelper.Error("LabOvenPatches introspect failed", e);
+          }
         }
-        catch (Exception e) {
-          LoggingHelper.Error("LabOvenPatches introspect failed", e);
-        }
-#endif
 
         int time = (int)op.cookDuration;
         if (time <= 0) {
@@ -90,9 +90,7 @@ namespace BetterStacksF.Patches {
         // recipes have a very short base duration (often 1), meaning a high
         // multiplier cannot make them any smaller.  this message will show
         // the incoming time, the configured speed, and the computed result.
-#if DEBUG
         LoggingHelper.Msg($"LabOven ScaleOperation invoked: originalTime={time}, speed={speed}");
-#endif
 
         // calculate a new cook time by dividing by the speed multiplier;
         // the previous implementation skipped scaling when the original
@@ -108,9 +106,7 @@ namespace BetterStacksF.Patches {
         if (scaled < 1) scaled = 1;
         if (scaled > time) scaled = time;
 
-#if DEBUG
         LoggingHelper.Msg($"LabOven ScaleOperation computed scaled={scaled}");
-#endif
 
         if (scaled != time) {
           op.cookDuration = scaled;

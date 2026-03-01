@@ -27,6 +27,7 @@ namespace BetterStacksF.Config {
     private static MelonPreferences_Entry<int> _cauldronCookSpeed = null!;
     private static MelonPreferences_Entry<int> _chemistrySpeed = null!;
     private static MelonPreferences_Entry<int> _labOvenSpeed = null!;
+    private static MelonPreferences_Entry<bool> _verboseLogging = null!;
 
     private static readonly Dictionary<string, MelonPreferences_Entry<int>> _categoryEntries = new();
     private static readonly Dictionary<string, int> _categoryMultiplierValues = new();
@@ -45,7 +46,8 @@ namespace BetterStacksF.Config {
             "CauldronIngredientMultiplier",
             "CauldronCookSpeed",
             "ChemistryStationSpeed",
-            "LabOvenSpeed"
+            "LabOvenSpeed",
+            "VerboseLogging"
     };
 
     /// <summary>
@@ -146,9 +148,11 @@ namespace BetterStacksF.Config {
           _suppressEntryEvents = false;
         }
       } // end lock
-#if DEBUG
+      // emit initial snapshot if verbose logging is enabled (this avoids
+      // spamming the log in normal play but lets developers see the starting
+      // values automatically when debugging).
       LoggingHelper.Msg("Initial preference snapshot", _lastAppliedPrefs);
-#endif
+
 
       if (_lastAppliedPrefs?.CategoryMultipliers != null) {
         _categoryMultiplierValues.Clear();
@@ -213,6 +217,10 @@ namespace BetterStacksF.Config {
         _labOvenSpeed = _prefsCategory.CreateEntry("LabOvenSpeed", 1,
             "Lab oven speed multiplier",
             "Divides the minute tick passed to lab ovens; higher values make oven operations run faster.");
+
+        _verboseLogging = _prefsCategory.CreateEntry("VerboseLogging", false,
+            "Verbose logging",
+            "When enabled the mod emits additional informational messages to the log.  Useful for debugging but noisy in normal use.");
       }
       catch (Exception ex) {
         LoggingHelper.Error("InitializeCoreEntries failed", ex);
@@ -262,6 +270,11 @@ namespace BetterStacksF.Config {
         _labOvenSpeed.OnEntryValueChanged.Subscribe(OnEntryChanged);
       else
         LoggingHelper.Warning("PreferencesMapper: _labOvenSpeed entry not initialized");
+
+      if (_verboseLogging != null)
+        _verboseLogging.OnEntryValueChanged.Subscribe(OnEntryChanged);
+      else
+        LoggingHelper.Warning("PreferencesMapper: _verboseLogging entry not initialized");
     }
 
     private static bool AreCoreEntriesInitialized() {
@@ -271,7 +284,8 @@ namespace BetterStacksF.Config {
              _dryingCapacity != null &&
              _cauldronMultiplier != null &&
              _cauldronCookSpeed != null &&
-             _chemistrySpeed != null &&
+             _labOvenSpeed != null &&
+             _verboseLogging != null;
              _labOvenSpeed != null;
     }
 
@@ -348,6 +362,7 @@ namespace BetterStacksF.Config {
       try {
         var cfg = new ModConfig {
           EnableServerAuthoritativeConfig = _enableServerAuthoritative.Value,
+          EnableVerboseLogging = _verboseLogging.Value,
           MixingStationCapacity = _mixingCapacity.Value,
           MixingStationSpeed = _mixingSpeed.Value,
           DryingRackCapacity = _dryingCapacity.Value,
@@ -382,6 +397,7 @@ namespace BetterStacksF.Config {
       try {
         if (AreCoreEntriesInitialized()) {
           _enableServerAuthoritative.Value = cfg.EnableServerAuthoritativeConfig;
+          _verboseLogging.Value = cfg.EnableVerboseLogging;
           _mixingCapacity.Value = cfg.MixingStationCapacity;
           _mixingSpeed.Value = cfg.MixingStationSpeed;
           _dryingCapacity.Value = cfg.DryingRackCapacity;

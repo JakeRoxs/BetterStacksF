@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using BetterStacksF.Utilities;
 
 
 namespace BetterStacksF.Config {
@@ -30,11 +31,16 @@ namespace BetterStacksF.Config {
         // update our working copy immediately so callers looking at
         // CurrentConfig see the right data.
         _config = cfg;
+
+        // mirror verbose logging flag to the helper so it takes effect
+        LoggingHelper.EnableVerbose = cfg.EnableVerboseLogging;
+
         return cfg;
       }
       catch {
         var cfg = new ModConfig();
         _config = cfg;
+        LoggingHelper.EnableVerbose = cfg.EnableVerboseLogging;
         return cfg;
       }
     }
@@ -71,6 +77,8 @@ namespace BetterStacksF.Config {
           break;
 
         _config = next;
+        // preserve verbose logging setting
+        LoggingHelper.EnableVerbose = next.EnableVerboseLogging;
         StackOverrideManager.ApplyStackOverrides(next);
       }
     }

@@ -7,11 +7,14 @@ using Newtonsoft.Json;
 namespace BetterStacksF.Utilities {
   internal static class LoggingHelper {
     // Controls whether the bulk of informational messages are written to the
-    // log.  In DEBUG builds the flag is initialized to true, in RELEASE builds
-    // it defaults to false, but callers may override it at runtime (e.g. via
-    // a console command or in-game setting) to enable/disable verbose output
-    // on the fly.  This replaces the previous compile‑time only `Verbose`
-    // property.
+    // log.  A user-visible preference ("Verbose logging") is exposed via
+    // MelonPreferences and the config system mirrors that value here; debug
+    // builds default the preference to true while release builds default to
+    // false.  The project file defines DEBUG only for the Debug configuration
+    // so a proper Release compile will not enable verbose output unexpectedly.
+    // Callers may also override the flag at runtime (e.g. via a console
+    // command) to toggle verbose logging without rebuilding.  This replaces
+    // the previous compile‑time only `Verbose` property.
     public static bool EnableVerbose { get; set; } =
 #if DEBUG
         true;

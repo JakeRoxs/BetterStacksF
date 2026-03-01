@@ -107,9 +107,7 @@ public class BetterStacksFMod : MelonMod {
       // If the Steam adapter deferred initialization because Steam/Steamworks wasn't ready yet,
       // keep the Steam adapter as the active adapter so it can attempt initialization later.
       if (steamAdapter is SteamNetworkAdapter s && s.InitializationDeferred) {
-#if DEBUG
         LoggingHelper.Msg("Steam adapter initialization deferred — will retry while running.");
-#endif
       }
       else {
         LoggingHelper.Init("Steam adapter not available — falling back to local adapter.");
@@ -121,7 +119,9 @@ public class BetterStacksFMod : MelonMod {
     }
 
     // Log the loaded configuration so we can verify which category multipliers are active at runtime.
-    LoggingHelper.Init("Loaded config", cfg);
+    // This message respects the verbose-logging preference, so end users may
+    // enable it at runtime when investigating issues.
+    LoggingHelper.Msg("Loaded config", cfg);
 
     // If we're the session host, immediately broadcast the authoritative HostConfig so clients apply the same settings.
     if (NetworkingManager.CurrentAdapter?.IsHost ?? false) {
@@ -270,9 +270,8 @@ public class BetterStacksFMod : MelonMod {
     if (!_ensureCatMultScheduled) {
       _ensureCatMultScheduled = true;
       GameLifecycle.OnPreLoad += DeferredCategoryMultiplierUpdate;
-#if DEBUG
       LoggingHelper.Msg("Item definitions not ready; scheduled category-multiplier update for OnPreLoad.");
-#endif
+
       return true;
     }
 

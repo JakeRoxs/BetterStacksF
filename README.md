@@ -15,6 +15,7 @@ A smarter, more flexible stack-size and workstation adjustment mod that syncs in
 * **Per-category multipliers** – every item category can now have its own stack-size setting, and new categories are auto-registered from the game data.  
 * **Workstation tuning** – tweak the capacities and speeds of various crafting appliances.  You can adjust mixing-station capacity, drying-rack capacity, and the speeds of the mixing station, cauldron, lab oven, and chemistry station.  
 * **Clean, exposed configuration** – all options live in a dedicated prefs file (`BetterStacksF.cfg`) and are editable via ModsApp or by hand.  
+* **Verbose logging toggle** – a checkbox in the MelonPreferences UI allows you to enable extra debug/info output when troubleshooting; it’s off by default in release builds.  
 * **Host-authoritative multiplayer** – the host sends its current settings to everyone; clients respect the `EnableServerAuthoritativeConfig` toggle and won’t save conflicting values.  
 
 Nexus: https://www.nexusmods.com/schedule1/mods/1619?tab=description  
