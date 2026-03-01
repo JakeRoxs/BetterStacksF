@@ -7,6 +7,8 @@ project might one day adhere to [Semantic Versioning](https://semver.org/spec/v2
 
 
 ## [Unreleased]
+### Developer
+- Renamed project/namespace from BetterStacks to BetterStacksF and cleaned up leftover files; updated packaging scripts and docs accordingly.
 
 
 ## [0.0.4] - 2026-02-28

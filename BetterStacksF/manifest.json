@@ -1,6 +1,6 @@
 {
   "name": "BetterStacksF",
-  "version_number": "0.0.4",
+  "version_number": "0.0.5",
   "website_url": "https://github.com/JakeRoxs/BetterStacksF",
   "description": "Increases stack sizes and capacities for Schedule I items and stations.",
   "dependencies": [
