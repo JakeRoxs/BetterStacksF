@@ -1,0 +1,11 @@
+{
+  "name": "BetterStacksF",
+  "version_number": "0.0.4",
+  "website_url": "https://github.com/JakeRoxs/BetterStacksF",
+  "description": "Increases stack sizes and capacities for Schedule I items and stations.",
+  "dependencies": [
+    "S1API",
+    "MelonLoader-0.7.0",
+    "SteamNetworkLib"
+  ]
+}

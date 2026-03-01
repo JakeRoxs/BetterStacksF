@@ -1,0 +1,78 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net6.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AssemblyName>BetterStacksF</AssemblyName>
+    <RootNamespace>BetterStacksF</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Lib.Harmony" Version="2.3.5" />
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <!--
+      ScheduleRoot is defined in Directory.Build.local.props (see README).  It
+      points at the root installation folder for Schedule I.  If it is not
+      provided, project will fail to build.
+    -->
+    <ScheduleRoot Condition="'$(ScheduleRoot)'==''">C:\Games\Steam\steamapps\common\Schedule I</ScheduleRoot>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Reference Include="Assembly-CSharp">
+      <HintPath>$(ScheduleRoot)\MelonLoader\Il2CppAssemblies\Assembly-CSharp.dll</HintPath>
+    </Reference>
+    <Reference Include="Il2CppInterop.Common">
+      <HintPath>$(ScheduleRoot)\MelonLoader\net6\Il2CppInterop.Common.dll</HintPath>
+    </Reference>
+    <Reference Include="Il2CppInterop.Runtime">
+      <HintPath>$(ScheduleRoot)\MelonLoader\net6\Il2CppInterop.Runtime.dll</HintPath>
+    </Reference>
+    <Reference Include="Il2Cppmscorlib">
+      <HintPath>$(ScheduleRoot)\MelonLoader\Il2CppAssemblies\Il2Cppmscorlib.dll</HintPath>
+    </Reference>
+    <Reference Include="MelonLoader">
+      <HintPath>$(ScheduleRoot)\MelonLoader\net6\MelonLoader.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.CoreModule">
+      <HintPath>$(ScheduleRoot)\MelonLoader\Il2CppAssemblies\UnityEngine.CoreModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.IMGUIModule">
+      <HintPath>$(ScheduleRoot)\MelonLoader\Il2CppAssemblies\UnityEngine.IMGUIModule.dll</HintPath>
+    </Reference>
+    <Reference Include="Il2CppFishNet.Runtime">
+      <HintPath>$(ScheduleRoot)\MelonLoader\Il2CppAssemblies\Il2CppFishNet.Runtime.dll</HintPath>
+    </Reference>
+
+    <!-- Reference S1API from the local game install; we look in the root mods\
+         folder so that the mod loader copy doesn’t need to be installed. -->
+    <Reference Include="S1API" Condition="Exists('$(ScheduleRoot)\\mods\\S1API.Il2Cpp.MelonLoader.dll')">
+      <HintPath>$(ScheduleRoot)\\mods\\S1API.Il2Cpp.MelonLoader.dll</HintPath>
+    </Reference>
+  </ItemGroup>
+
+
+  <!-- SteamNetworkLib is required for networking features.  Prefer the copy installed
+       alongside the game; fall back to the replica checked in under docs so that
+       developers can build without having Schedule I installed. -->
+  <Target Name="EnsureSteamNetworkLibPresent" BeforeTargets="Build">
+    <Error Condition="!Exists('$(ScheduleRoot)\UserLibs\SteamNetworkLib-IL2Cpp.dll') and !Exists('..\\docs\\SteamNetworkLib-IL2Cpp.dll')"
+           Text="SteamNetworkLib-IL2Cpp.dll not found. Place it in $(ScheduleRoot)\UserLibs or add ..\docs\SteamNetworkLib-IL2Cpp.dll to the repo."/>
+  </Target>
+
+  <ItemGroup>
+    <Reference Include="SteamNetworkLib" Condition="Exists('$(ScheduleRoot)\UserLibs\SteamNetworkLib-IL2Cpp.dll')">
+      <HintPath>$(ScheduleRoot)\UserLibs\SteamNetworkLib-IL2Cpp.dll</HintPath>
+      <Private>True</Private>
+    </Reference>
+    <Reference Include="SteamNetworkLib" Condition="!Exists('$(ScheduleRoot)\UserLibs\SteamNetworkLib-IL2Cpp.dll') and Exists('..\\docs\\SteamNetworkLib-IL2Cpp.dll')">
+      <HintPath>..\\docs\\SteamNetworkLib-IL2Cpp.dll</HintPath>
+      <Private>True</Private>
+    </Reference>
+  </ItemGroup>
+
+</Project>

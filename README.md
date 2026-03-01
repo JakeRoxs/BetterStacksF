@@ -2,14 +2,23 @@
 
 This repo contains the source code for the BetterStacksF melonloader mod.
 
-It’s basically the same idea as before, just smarter, more flexible, and more multiplayer-safe.
+It’s basically the same idea as before, just smarter, more flexible, and more multiplayer-safe.  
+Forked from the original Better Stacks project, which is licensed under the MIT License; this code continues under the same terms.
 
-- Stack sizes can be adjusted for every category individually.
-- Workstations and crafting appliances have their own tunables as well: you can change mixing-station capacity & speed and drying-rack capacity.
-- Category entries are registered automatically from the game’s item definitions and obsolete keys are pruned, so you usually don’t have to touch the config when new content is added.
-- In multiplayer the host sends the settings to everyone else, so all players share the same rules.  The `EnableServerAuthoritativeConfig` option lets you disable that behavior if you prefer local control.
-- Configuration is now stored in a dedicated MelonPreferences category (`BetterStacksF`) that is written to a separate `BetterStacksF.cfg` file in the UserData folder.  You can edit it via ModsApp or by hand.
-- The code is organised into separate pieces (config, networking, patches) to keep it easier to work on.
+---
+
+## Description
+
+**Forked from Better Stacks**  
+A smarter, more flexible stack-size and workstation adjustment mod that syncs in multiplayer.
+
+* **Per-category multipliers** – every item category can now have its own stack-size setting, and new categories are auto-registered from the game data.  
+* **Workstation tuning** – tweak the capacities and speeds of various crafting appliances.  You can adjust mixing-station capacity, drying-rack capacity, and the speeds of the mixing station, cauldron, lab oven, and chemistry station.  
+* **Clean, exposed configuration** – all options live in a dedicated prefs file (`BetterStacksF.cfg`) and are editable via ModsApp or by hand.  
+* **Host-authoritative multiplayer** – the host sends its current settings to everyone; clients respect the `EnableServerAuthoritativeConfig` toggle and won’t save conflicting values.  
+
+Nexus: https://www.nexusmods.com/schedule1/mods/1619?tab=description  
+Thunderstore: Not yet published on Thunderstore.
 
 ---
 
