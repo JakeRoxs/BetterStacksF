@@ -7,9 +7,12 @@ project might one day adhere to [Semantic Versioning](https://semver.org/spec/v2
 
 
 ## [Unreleased]
+
+
+
+## [0.0.5] - 2026-02-28
 ### Developer
 - Renamed project/namespace from BetterStacks to BetterStacksF and cleaned up leftover files; updated packaging scripts and docs accordingly.
-
 
 ## [0.0.4] - 2026-02-28
 ### User-facing
@@ -64,7 +67,7 @@ project might one day adhere to [Semantic Versioning](https://semver.org/spec/v2
   and the initial migration to MelonPreferences.
 
 
-[Unreleased]: https://github.com/JakeRoxs/BetterStacksF/compare/v0.0.4...HEAD
+[Unreleased]: https://github.com/JakeRoxs/BetterStacksF/compare/v0.0.5...HEAD
 [0.0.4]: https://github.com/JakeRoxs/BetterStacksF/compare/v0.0.3...v0.0.4
 [0.0.3]: https://github.com/JakeRoxs/BetterStacksF/compare/v0.0.2...v0.0.3
 [0.0.2]: https://github.com/JakeRoxs/BetterStacksF/compare/v0.0.1...v0.0.2
