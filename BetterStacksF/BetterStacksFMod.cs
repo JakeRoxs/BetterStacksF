@@ -30,6 +30,10 @@ namespace BetterStacksF;
 public class BetterStacksFMod : MelonMod {
   // configuration now managed by ConfigManager
 
+  // keep track of the last-known preferences state so we can compare when
+  // `OnPreferencesSaved` fires.
+  private ModConfig? _lastPrefs;
+
 
   // (previous reflection helpers have been migrated to Utilities.ReflectionHelper and are no longer present here)
 
@@ -71,6 +75,7 @@ public class BetterStacksFMod : MelonMod {
     // retrieve the saved configuration and make it the active value; the
     // manager no longer attempts to validate or mutate the config for us.
     var cfg = ConfigManager.LoadConfig();
+    _lastPrefs = cfg;
 
     // ensure the category‑multiplier dictionary exists and schedule any
     // deferred game‑defs sync.  this used to be called from
@@ -201,6 +206,22 @@ public class BetterStacksFMod : MelonMod {
 
   }
 
+  // `OnPreferencesSaved` is overridden purely to emit a log message showing
+  // the before/after config state.  PreferencesMapper already performs the
+  // actual load/apply work (see EnsureRegistered/ApplyPreferencesNow)
+  public override void OnPreferencesSaved() {
+    // caller (MelonLoader) has just written the preferences file.  Read the
+    // new values and compare with what we last knew, logging the delta if
+    // anything changed.
+    var before = _lastPrefs;
+    var after = PreferencesMapper.ReadFromPreferences();
+    if (!PreferencesMapper.AreConfigsEqual(before, after)) {
+      LoggingHelper.Init(
+          "Preferences saved",
+          new { previous = before, current = after });
+    }
+    _lastPrefs = after;
+  }
 
   // Ensure CategoryMultipliers exists and merge legacy typed properties into the dictionary.
   // When addEnumKeys is true the method may add/prune entries based on the game's item definitions.

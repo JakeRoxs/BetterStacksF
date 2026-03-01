@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+
 using BetterStacksF.Utilities;
 
 
@@ -35,12 +36,17 @@ namespace BetterStacksF.Config {
         // mirror verbose logging flag to the helper so it takes effect
         LoggingHelper.EnableVerbose = cfg.EnableVerboseLogging;
 
+        // log that we've finished loading the configuration from prefs; this
+        // will appear in init-level logs so release builds will show it.
+        LoggingHelper.Init("Configuration loaded", cfg);
+
         return cfg;
       }
       catch {
         var cfg = new ModConfig();
         _config = cfg;
         LoggingHelper.EnableVerbose = cfg.EnableVerboseLogging;
+        LoggingHelper.Init("Configuration load failed, using defaults", cfg);
         return cfg;
       }
     }
@@ -79,6 +85,7 @@ namespace BetterStacksF.Config {
         _config = next;
         // preserve verbose logging setting
         LoggingHelper.EnableVerbose = next.EnableVerboseLogging;
+
         StackOverrideManager.ApplyStackOverrides(next);
       }
     }

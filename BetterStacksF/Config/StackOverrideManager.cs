@@ -50,9 +50,8 @@ namespace BetterStacksF.Config {
 
         var allDefs = defsCheck.ToList();
 
-        if (LoggingHelper.EnableVerbose)
-        {
-            LogDebugDiagnostics(allDefs, cfg);
+        if (LoggingHelper.EnableVerbose) {
+          LogDebugDiagnostics(allDefs, cfg);
         }
 
         EnsureStackableCache(allDefs);
@@ -98,7 +97,7 @@ namespace BetterStacksF.Config {
 
             if ((def.Name != null && def.Name.IndexOf("effect", StringComparison.OrdinalIgnoreCase) >= 0)
                 || defType.Name.IndexOf("Effect", StringComparison.OrdinalIgnoreCase) >= 0) {
-        LoggingHelper.Msg($"Skipping non-stackable effect definition: {def.Name} ({defType.Name})");
+              LoggingHelper.Msg($"Skipping non-stackable effect definition: {def.Name} ({defType.Name})");
               continue;
             }
 

@@ -28,8 +28,18 @@ namespace BetterStacksF.Config {
     private static MelonPreferences_Entry<int> _chemistrySpeed = null!;
     private static MelonPreferences_Entry<int> _labOvenSpeed = null!;
     private static MelonPreferences_Entry<bool> _verboseLogging = null!;
-
+#if DEBUG
+    private const bool VerboseLoggingDefault = true;
+#else
+    private const bool VerboseLoggingDefault = false;
+#endif
     private static readonly Dictionary<string, MelonPreferences_Entry<int>> _categoryEntries = new();
+    // cache of multiplier values for fast access by other subsystems.  It is
+    // populated whenever the configuration is loaded from disk or written back
+    // (see ApplyConfigToEntries/UpdateInMemoryCategoryMultipliers).  Until a
+    // preferences file has actually been read or a save executed the cache will
+    // be empty; that's fine because nothing uses it before a real config is
+    // available.
     private static readonly Dictionary<string, int> _categoryMultiplierValues = new();
 
     private static ModConfig? _lastAppliedPrefs = null;
@@ -147,30 +157,21 @@ namespace BetterStacksF.Config {
         finally {
           _suppressEntryEvents = false;
         }
-      } // end lock
-      // emit initial snapshot if verbose logging is enabled (this avoids
-      // spamming the log in normal play but lets developers see the starting
-      // values automatically when debugging).
-      LoggingHelper.Msg("Initial preference snapshot", _lastAppliedPrefs);
 
+        // emit initial snapshot if verbose logging is enabled
+        LoggingHelper.Msg("Initial preference snapshot", _lastAppliedPrefs);
 
-      if (_lastAppliedPrefs?.CategoryMultipliers != null) {
-        _categoryMultiplierValues.Clear();
-        foreach (var kv in _lastAppliedPrefs.CategoryMultipliers)
-          _categoryMultiplierValues[kv.Key] = kv.Value;
+        // remove any junk entries from the raw preferences so they don't linger
+        RemoveInvalidCategoryEntries();
+
+        try { RegisterCategoryMultipliersFromGameDefs(); }
+        catch (Exception ex) {
+          // registration is best-effort; log any failure for diagnostics
+          LoggingHelper.Warning($"RegisterCategoryMultipliersFromGameDefs failed: {ex.Message}");
+        }
+
+        _initialized = true;
       }
-
-      // remove any junk entries from the raw preferences so they don't linger
-      RemoveInvalidCategoryEntries();
-
-      try { RegisterCategoryMultipliersFromGameDefs(); }
-      catch (Exception ex) {
-        // registration is best-effort; log any failure for diagnostics
-        LoggingHelper.Warning($"RegisterCategoryMultipliersFromGameDefs failed: {ex.Message}");
-      }
-
-
-      _initialized = true;
     }
 
     private static void OnEntryChanged<T>(T oldValue, T newValue) {
@@ -218,7 +219,7 @@ namespace BetterStacksF.Config {
             "Lab oven speed multiplier",
             "Divides the minute tick passed to lab ovens; higher values make oven operations run faster.");
 
-        _verboseLogging = _prefsCategory.CreateEntry("VerboseLogging", false,
+        _verboseLogging = _prefsCategory.CreateEntry("VerboseLogging", VerboseLoggingDefault,
             "Verbose logging",
             "When enabled the mod emits additional informational messages to the log.  Useful for debugging but noisy in normal use.");
       }
@@ -369,7 +370,8 @@ namespace BetterStacksF.Config {
           CauldronCookSpeed = _cauldronCookSpeed.Value,
           ChemistryStationSpeed = _chemistrySpeed.Value,
           LabOvenSpeed = _labOvenSpeed.Value,
-          CategoryMultipliers = new Dictionary<string, int>()
+          // leave CategoryMultipliers untouched so the class initializer can
+          // supply its built‑in defaults; we'll overlay any existing entries below.
         };
 
         foreach (var kv in _categoryEntries)
