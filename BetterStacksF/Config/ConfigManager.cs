@@ -23,36 +23,49 @@ namespace BetterStacksF.Config {
       // reads the preferences file, sanitizes the result and updates the
       // manager's cache.  callers are responsible for any additional
       // validation/initialisation (e.g. category sync).
-      try {
-        PreferencesMapper.EnsureRegistered();
-        // after registration we may already have a cached copy from the
-        // initial ReadFromPreferences call; use it to avoid duplicating work.
-        var cfg = PreferencesMapper.GetCachedPreferences() ?? PreferencesMapper.ReadFromPreferences();
-        // sanitize any strange keys that may have made it into prefs; this
-        // also handles the case where the ModsApp UI has gone wrong.
-        PreferencesMapper.SanitizeCategoryKeys(cfg);
+      //
+      // This method can be invoked from arbitrary threads (network callbacks,
+      // UI events, etc.), so it takes the same lock used by the queue helpers
+      // to avoid races against EnqueueConfigUpdate/ProcessPendingUpdates.
+      PreferencesMapper.EnsureRegistered();
+      // after registration we may already have a cached copy from the
+      // initial ReadFromPreferences call; use it to avoid duplicating work.
+      var cfg = PreferencesMapper.GetCachedPreferences() ?? PreferencesMapper.ReadFromPreferences();
+      // sanitize any strange keys that may have made it into prefs; this
+      // also handles the case where the ModsApp UI has gone wrong.
+      PreferencesMapper.SanitizeCategoryKeys(cfg);
 
-        // update our working copy immediately so callers looking at
-        // CurrentConfig see the right data.
-        _config = cfg;
+      // push the values we just loaded back into the preference entries.
+      // this guarantees that manual edits (parsed in ReadFromPreferences) are
+      // reflected in MelonPreferences and therefore won't be lost by later
+      // registration logic which creates its own defaults.
+      PreferencesMapper.ApplyConfigToEntries(cfg);
 
-        // mirror verbose logging flag to the helper so it takes effect
-        LoggingHelper.EnableVerbose = cfg.EnableVerboseLogging;
+      lock (_lock) {
+        try {
+          // update our working copy immediately so callers looking at
+          // CurrentConfig see the right data.
+          _config = cfg;
 
-        // log once only; subsequent calls may return the same object
-        if (!_loggedInitialLoad) {
-          LoggingHelper.Init("Configuration loaded:\n" + PreferencesMapper.DescribeConfig(cfg));
-          _loggedInitialLoad = true;
+          // mirror verbose logging flag to the helper so it takes effect
+          LoggingHelper.EnableVerbose = cfg.EnableVerboseLogging;
+
+          // log once only; subsequent calls may return the same object
+          if (!_loggedInitialLoad) {
+            LoggingHelper.Init("Configuration loaded:\n" + PreferencesMapper.DescribeConfig(cfg));
+            _loggedInitialLoad = true;
+          }
+
+          return cfg;
         }
-
-        return cfg;
-      }
-      catch {
-        var cfg = new ModConfig();
-        _config = cfg;
-        LoggingHelper.EnableVerbose = cfg.EnableVerboseLogging;
-        LoggingHelper.Init("Configuration load failed, using defaults", cfg);
-        return cfg;
+        catch (Exception ex) {
+          var fallbackConfig = new ModConfig();
+          _config = fallbackConfig;
+          LoggingHelper.EnableVerbose = fallbackConfig.EnableVerboseLogging;
+          // include exception text so failures are diagnosable
+          LoggingHelper.Warning($"Configuration load failed, using defaults: {ex}", fallbackConfig);
+          return fallbackConfig;
+        }
       }
     }
 

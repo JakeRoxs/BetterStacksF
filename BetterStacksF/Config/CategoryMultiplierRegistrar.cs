@@ -40,8 +40,19 @@ namespace BetterStacksF.Config {
       try {
         PreferencesMapper.EnsureRegistered();
 
+        // we need a copy of the hard‑coded defaults so we can look up the
+        // built-in multiplier for any categories that don't yet exist in the
+        // user's config.  the defaults object is never modified.
         var defaults = new ModConfig();
-        var cfg = PreferencesMapper.ReadFromPreferences() ?? new ModConfig();
+
+        // prefer an already-loaded configuration to avoid touching the file
+        // multiple times during startup.  EnsureRegistered guarantees that
+        // _lastAppliedPrefs is populated, so GetCachedPreferences() will almost
+        // always return a value.  We still fall back to ReadFromPreferences in
+        // the unlikely case the cache is empty.
+        var cfg = PreferencesMapper.GetCachedPreferences() ??
+                  PreferencesMapper.ReadFromPreferences() ??
+                  new ModConfig();
         if (cfg.CategoryMultipliers == null)
           cfg.CategoryMultipliers = new Dictionary<string, int>();
 

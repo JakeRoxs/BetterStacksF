@@ -43,6 +43,15 @@ namespace BetterStacksF.Config {
     // available.
     private static readonly Dictionary<string, int> _categoryMultiplierValues = new();
 
+    // track the last value we merged from the raw preferences file for each
+    // category.  ReadFromPreferences may be invoked multiple times during
+    // startup and whenever preferences are saved; the underlying file rarely
+    // changes while the game is loading, so repeated merges with the same
+    // data would otherwise generate the same log messages over and over.  We
+    // remember the last normalized value and suppress logging if it hasn't
+    // changed.
+    private static readonly Dictionary<string, int> _lastMergedRawValues = new(StringComparer.OrdinalIgnoreCase);
+
     private static ModConfig? _lastAppliedPrefs = null;
 
     /// <summary>
@@ -66,6 +75,51 @@ namespace BetterStacksF.Config {
             "LabOvenSpeed",
             "VerboseLogging"
     };
+
+    /// <summary>
+    /// Read the raw BetterStacksF.cfg file and return every key/value pair found
+    /// inside the <c>[BetterStacks]</c> category.  MelonPreferences only creates
+    /// entries for keys that have been registered in code, which means a
+    /// player who manually edits the file can end up with values that are
+    /// ignored and later overwritten by hardcoded defaults.  This helper lets us
+    /// detect those stray values and merge them during load.
+    /// </summary>
+    private static Dictionary<string, string>? ReadRawPreferencesFile()
+    {
+      try {
+        var path = Path.Combine(GetUserDataDirectory(), "BetterStacksF.cfg");
+        if (!File.Exists(path))
+          return null;
+
+        var results = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        bool inSection = false;
+        foreach (var line in File.ReadAllLines(path)) {
+          var trimmed = line.Trim();
+          if (trimmed.StartsWith("[") && trimmed.EndsWith("]")) {
+            inSection = string.Equals(trimmed.Trim('[', ']'), CategoryId,
+                          StringComparison.OrdinalIgnoreCase);
+            continue;
+          }
+
+          if (!inSection || string.IsNullOrWhiteSpace(trimmed) || trimmed.StartsWith(";"))
+            continue;
+
+          var idx = trimmed.IndexOf('=');
+          if (idx <= 0)
+            continue;
+
+          var key = trimmed.Substring(0, idx).Trim();
+          var val = trimmed.Substring(idx + 1).Trim();
+          results[key] = val;
+        }
+
+        return results;
+      }
+      catch (Exception ex) {
+        LoggingHelper.Warning("Failed to read raw BetterStacksF preferences file; falling back to normal preference entries.", ex);
+        return null;
+      }
+    }
 
     /// <summary>
     /// Remove any entries from <see cref="ModConfig.CategoryMultipliers"/> whose
@@ -216,35 +270,39 @@ namespace BetterStacksF.Config {
       // initialization.  Wrap the whole thing so we can log the error and
       // continue gracefully using defaults.
       try {
-        _enableServerAuthoritative = _prefsCategory.CreateEntry("EnableServerAuthoritativeConfig", true,
+        // obtain a fresh config instance to grab the hard-coded defaults; this
+        // keeps the prefs defaults in sync without duplicating the numbers.
+        var defaults = new ModConfig();
+
+        _enableServerAuthoritative = _prefsCategory.CreateEntry("EnableServerAuthoritativeConfig", defaults.EnableServerAuthoritativeConfig,
             "Enable server-authoritative config",
             "When enabled the host may override player settings in multiplayer.");
 
-        _mixingCapacity = _prefsCategory.CreateEntry("MixingStationCapacity", 1,
+        _mixingCapacity = _prefsCategory.CreateEntry("MixingStationCapacity", defaults.MixingStationCapacity,
             "Mixing station capacity multiplier",
             "Multiplies the amount of items a mixing station can hold.");
 
-        _mixingSpeed = _prefsCategory.CreateEntry("MixingStationSpeed", 1,
+        _mixingSpeed = _prefsCategory.CreateEntry("MixingStationSpeed", defaults.MixingStationSpeed,
             "Mixing station speed multiplier",
             "Divides the time of mixing stations, higher values make mixing faster.");
 
-        _dryingCapacity = _prefsCategory.CreateEntry("DryingRackCapacity", 1,
+        _dryingCapacity = _prefsCategory.CreateEntry("DryingRackCapacity", defaults.DryingRackCapacity,
             "Drying rack capacity multiplier",
             "Multiplies the capacity of drying racks.");
 
-        _cauldronMultiplier = _prefsCategory.CreateEntry("CauldronIngredientMultiplier", 1,
+        _cauldronMultiplier = _prefsCategory.CreateEntry("CauldronIngredientMultiplier", defaults.CauldronIngredientMultiplier,
             "Cauldron ingredient multiplier",
             "(TODO)Multiplies the quantity able to be cooked (coca leaves) and the resulting output amount.");
 
-        _cauldronCookSpeed = _prefsCategory.CreateEntry("CauldronCookSpeed", 1,
+        _cauldronCookSpeed = _prefsCategory.CreateEntry("CauldronCookSpeed", defaults.CauldronCookSpeed,
             "Cauldron cook speed multiplier",
             "Divides the cooking time when a cauldron starts a recipe, higher values make cooking faster.");
 
-        _chemistrySpeed = _prefsCategory.CreateEntry("ChemistryStationSpeed", 1,
+        _chemistrySpeed = _prefsCategory.CreateEntry("ChemistryStationSpeed", defaults.ChemistryStationSpeed,
             "Chemistry station speed multiplier",
             "Divides the minute tick passed to chemistry stations; higher values make chemistry operations run faster.");
 
-        _labOvenSpeed = _prefsCategory.CreateEntry("LabOvenSpeed", 1,
+        _labOvenSpeed = _prefsCategory.CreateEntry("LabOvenSpeed", defaults.LabOvenSpeed,
             "Lab oven speed multiplier",
             "Divides the minute tick passed to lab ovens; higher values make oven operations run faster.");
 
@@ -400,11 +458,49 @@ namespace BetterStacksF.Config {
           ChemistryStationSpeed = _chemistrySpeed.Value,
           LabOvenSpeed = _labOvenSpeed.Value,
           // leave CategoryMultipliers untouched so the class initializer can
-          // supply its built‑in defaults; we'll overlay any existing entries below.
+          // supply its built-in defaults; we'll overlay any existing entries below.
         };
 
+        // start with whatever entries MelonPreferences knows about
         foreach (var kv in _categoryEntries)
           cfg.CategoryMultipliers[kv.Key] = kv.Value.Value;
+
+        // merge in any values that exist in the file but haven't been
+        // registered yet.  this is the heart of the "cfg values beat
+        // hardcoded defaults" requirement; manual edits will survive startup
+        // even if we haven't touched that key in code before.
+        var raw = ReadRawPreferencesFile();
+        if (raw != null) {
+          foreach (var kv in raw) {
+            var key = kv.Key;
+            if (_reservedKeys.Contains(key))
+              continue;
+
+            if (int.TryParse(kv.Value, out var parsed)) {
+              var normalized = NormalizeMultiplier(parsed);
+
+              // determine whether the incoming value differs from the last one
+              // we saw for this key; if it's identical we still need to apply it
+              // to the freshly-built cfg but we can suppress the log message.
+              bool previouslyMerged = _lastMergedRawValues.TryGetValue(key, out var prevVal) && prevVal == normalized;
+
+              bool hadKey = cfg.CategoryMultipliers.TryGetValue(key, out var existing);
+              if (!hadKey || existing != normalized) {
+                cfg.CategoryMultipliers[key] = normalized;
+
+                if (!previouslyMerged) {
+                  if (hadKey) {
+                    LoggingHelper.Msg($"Overrode category multiplier '{key}' {existing} -> {normalized} from raw file");
+                  } else {
+                    LoggingHelper.Msg($"Merged raw preference '{key}'={normalized} from file (no prior value)");
+                  }
+                }
+              }
+
+              _lastMergedRawValues[key] = normalized;
+            }
+          }
+        }
 
         // guard against any malformed entries (empty key, whitespace, etc.)
         SanitizeCategoryKeys(cfg);
@@ -426,11 +522,12 @@ namespace BetterStacksF.Config {
     }
 
     /// <summary>
-    /// Update all preference entries (and in‑memory multiplier cache) to match the
-    /// supplied config object. Entry change events are suppressed during the
-    /// operation.
+    /// Copy every field from the supplied <see cref="ModConfig"/> into the
+    /// corresponding <c>MelonPreferences</c> entries and update the internal
+    /// multiplier cache.  Entry change events are suppressed while the operation
+    /// is underway to avoid recursive updates.
     /// </summary>
-    private static void ApplyConfigToEntries(ModConfig cfg) {
+    internal static void ApplyConfigToEntries(ModConfig cfg) {
       _suppressEntryEvents = true;
       try {
         if (AreCoreEntriesInitialized()) {

@@ -97,12 +97,10 @@ public class BetterStacksFMod : MelonMod {
     // initial call above and mirrors the behaviour of the old implementation.
     GameLifecycle.OnPreLoad += ApplyStackOverrides;
 
-    // move the existing log/broadcast logic here so it reflects the config we
-    // just loaded/validated
-    // Ensure category-multiplier MelonPreferences entries are registered early so
-    // ModsApp / other preference editors can modify the same MelonPreferences_Entry
-    // instances we read from in PollAndApplyChanges.
-    try { PreferencesMapper.RegisterCategoryMultipliersFromGameDefs(); } catch { }
+    // PreferenceMapper.EnsureRegistered (called by LoadConfig) has already
+    // scheduled registration of category-multiplier entries.  an additional
+    // explicit call here was previously causing a second disk read during
+    // startup.
 
     // local adapter when Steam is definitely not available.
     var steamAdapter = new SteamNetworkAdapter();
