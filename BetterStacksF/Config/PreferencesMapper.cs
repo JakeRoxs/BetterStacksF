@@ -286,7 +286,6 @@ namespace BetterStacksF.Config {
              _cauldronCookSpeed != null &&
              _labOvenSpeed != null &&
              _verboseLogging != null;
-             _labOvenSpeed != null;
     }
 
     private static void LoadExistingCategoryEntries() {
