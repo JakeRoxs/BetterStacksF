@@ -34,9 +34,6 @@ public class BetterStacksFMod : MelonMod {
   // `OnPreferencesSaved` fires.
   private ModConfig? _lastPrefs;
 
-
-  // (previous reflection helpers have been migrated to Utilities.ReflectionHelper and are no longer present here)
-
   // Compute multiplier for a category from the supplied config (falling back to the
   // globally loaded config and logging missing defaults).
   internal static int GetModifierForCategory(ModConfig? cfg, EItemCategory category) {
@@ -91,6 +88,22 @@ public class BetterStacksFMod : MelonMod {
     // first frame sees the correct values.  subsequent config updates will be
     // driven via ProcessPendingUpdates.
     StackOverrideManager.ApplyStackOverrides(cfg);
+
+    // diagnostics: log Steam readiness at key lifecycle events to determine when
+    // SteamNetworkLib becomes available.  remove these once the init-hook is
+    // chosen.
+    GameLifecycle.OnPreLoad += () => {
+        bool ready = SteamNetworkLib.Utilities.SteamNetworkUtils.IsSteamInitialized();
+        LoggingHelper.Msg($"[SteamNetworkAdapter diag] OnPreLoad steamReady={ready}");
+    };
+    GameLifecycle.OnLoadComplete += () => {
+        bool ready = SteamNetworkLib.Utilities.SteamNetworkUtils.IsSteamInitialized();
+        LoggingHelper.Msg($"[SteamNetworkAdapter diag] OnLoadComplete steamReady={ready}");
+    };
+
+    // clear reflection dump cache when the scene changes (e.g. returning to
+    // main menu) so that subsequent DumpObject calls will log types again.
+    GameLifecycle.OnPreSceneChange += () => ReflectionHelper.ResetDumpCache();
 
     // also ensure we re-apply overrides when the game does a pre-load pass;
     // this covers the case where item definitions weren't ready during the
@@ -159,6 +172,22 @@ public class BetterStacksFMod : MelonMod {
         if (m.Name == "StartCookOperation")
           harmony.Patch(m, prefix: prefix);
       }
+
+      // also intercept the remaining cook‑operation helpers so our flexible
+      // consumption logic runs during networking/finalization paths.  these
+      // methods are unique rather than overloads, so call Patch individually.
+      harmony.Patch(
+          AccessTools.Method(cauldronType, "FinishCookOperation"),
+          prefix: new HarmonyMethod(typeof(CauldronPatches), nameof(CauldronPatches.Prefix_FinishCookOperation))
+      );
+      harmony.Patch(
+          AccessTools.Method(cauldronType, "SendCookOperation"),
+          prefix: new HarmonyMethod(typeof(CauldronPatches), nameof(CauldronPatches.Prefix_SendCookOperation))
+      );
+      harmony.Patch(
+          AccessTools.Method(cauldronType, "SetCookOperation"),
+          prefix: new HarmonyMethod(typeof(CauldronPatches), nameof(CauldronPatches.Prefix_SetCookOperation))
+      );
     }
 
     // chemistry station (ops + UI)

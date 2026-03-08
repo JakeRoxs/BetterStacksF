@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Generic;
 using System.Reflection;
 using System.Runtime.CompilerServices;
 
@@ -36,9 +35,6 @@ namespace BetterStacksF.Patches {
     private static readonly ConditionalWeakTable<object, object> _scaledRecipes =
         new ConditionalWeakTable<object, object>();
 
-    // log the fields/properties on the first operation instance we see so the
-    // name of the “real” timer field can be identified during testing.
-    private static readonly HashSet<Type> _loggedTypes = new HashSet<Type>();
 
 
     // apply multiplier to an operation; keeps the cook time >=1 and avoids
@@ -61,28 +57,21 @@ namespace BetterStacksF.Patches {
 
         // check recipe-level cache before touching anything
         dynamic? recipe = null; // avoid CS8600 warning
-        try { recipe = op.Recipe; }
-        catch (Exception ex) {
-          LoggingHelper.Error("ChemStation ScaleOperation could not read recipe", ex);
-        }
+        ReflectionHelper.TryCatchLog(() => { recipe = op.Recipe; },
+                                "ChemStation ScaleOperation could not read recipe");
         if (recipe != null && _scaledRecipes.TryGetValue((object)recipe!, out _)) {
           LoggingHelper.Msg("ChemStation ScaleOperation skipped already-scaled recipe");
           // still add op entry so we don't recheck on the same op object
-          try {
+          ReflectionHelper.TryCatchLog(() => {
             int existing = (int)recipe!.CookTime_Mins;
             _scaledTable.Add(opKey, new ScaledInfo { value = existing });
-          }
-          catch (Exception ex) {
-            LoggingHelper.Error("ChemStation ScaleOperation failed to cache existing time", ex);
-          }
+          }, "ChemStation ScaleOperation failed to cache existing time");
           return;
         }
 
         int orig = 1;
-        try { orig = (int)op.Recipe.CookTime_Mins; }
-        catch (Exception ex) {
-          LoggingHelper.Error("ChemStation ScaleOperation could not read original cook time", ex);
-        }
+        ReflectionHelper.TryCatchLog(() => { orig = (int)op.Recipe.CookTime_Mins; },
+                                "ChemStation ScaleOperation could not read original cook time");
         if (orig <= 0) orig = 1;
 
         int scaled = Math.Max(1, orig / speed);
@@ -96,7 +85,7 @@ namespace BetterStacksF.Patches {
         // instance so its internal timer starts at the scaled duration.  the
         // setter approach we attempted previously could not be patched, so we
         // brute‑force search for a field/property equal to the original value.
-        try {
+        ReflectionHelper.TryCatchLog(() => {
           var recipeInstance = op.Recipe;
           if (recipeInstance != null) {
             var rtype = recipeInstance.GetType();
@@ -116,10 +105,7 @@ namespace BetterStacksF.Patches {
             // remember that this recipe has been altered so we don't touch it again
             _scaledRecipes.Add((object)recipeInstance, 0);
           }
-        }
-        catch (Exception ex) {
-          LoggingHelper.Error("ChemStation ScaleOperation recipe mutation failed", ex);
-        }
+        }, "ChemStation ScaleOperation recipe mutation failed");
 
         // proactively adjust any integer field on the operation instance that
         // was initialized with the original duration.  this is the actual fix
@@ -127,64 +113,44 @@ namespace BetterStacksF.Patches {
         SetOperationTime(op, scaled, orig);
 
         // dump structure once so we can inspect field names in logs
-        DumpOperation(opKey);
+        if (LoggingHelper.EnableVerbose)
+        {
+          ReflectionHelper.DumpObject(opKey);
+        }
       }
       catch (Exception ex) {
         LoggingHelper.Error("ScaleOperation failed", ex);
       }
     }
 
-    // debug helper: print all fields/properties of the operation type once
-    private static void DumpOperation(object op) {
-      if (op == null) return;
-      var type = op.GetType();
-      if (_loggedTypes.Contains(type)) return;
-      _loggedTypes.Add(type);
-
-      LoggingHelper.Msg($"ChemStation operation type {type.FullName} fields/properties:");
-      foreach (var f in type.GetFields(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)) {
-        try { LoggingHelper.Msg($" field {f.Name} ({f.FieldType.Name}) = {f.GetValue(op)}"); } catch { }
-      }
-      foreach (var p in type.GetProperties(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)) {
-        try { LoggingHelper.Msg($" prop {p.Name} ({p.PropertyType.Name}) = {p.GetValue(op)}"); } catch { }
-      }
-    }
 
     // when we see an integer field whose value matches the original duration we
     // assume it's the one the station uses internally and rewrite it.  this
     // generic approach avoids hardcoding field names across game versions.
     private static void SetOperationTime(dynamic op, int scaled, int orig) {
       if (op == null) return;
-      object obj = (object)op;
-      var type = obj.GetType();
-      foreach (var f in type.GetFields(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)) {
-        if (f.FieldType == typeof(int)) {
-          try {
-            var rawValue = f.GetValue(obj);
-            if (rawValue is int val && val == orig) {
-              f.SetValue(obj, scaled);
-              LoggingHelper.Msg($"ChemStation SetOperationTime scaled field {f.Name} {orig}->{scaled}");
+      ReflectionHelper.TryCatchLog(() => {
+          object obj = (object)op;
+          var type = obj.GetType();
+          foreach (var f in type.GetFields(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)) {
+            if (f.FieldType == typeof(int)) {
+              var rawValue = f.GetValue(obj);
+              if (rawValue is int val && val == orig) {
+                f.SetValue(obj, scaled);
+                LoggingHelper.Msg($"ChemStation SetOperationTime scaled field {f.Name} {orig}->{scaled}");
+              }
             }
           }
-          catch (Exception ex) {
-            LoggingHelper.Error("ChemStation SetOperationTime field reflection failed", ex);
+          // also try CurrentTime property if for some reason it starts at orig
+          var prop = type.GetProperty("CurrentTime", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+          if (prop != null && prop.CanWrite && prop.PropertyType == typeof(int)) {
+            var rawValue = prop.GetValue(obj);
+            if (rawValue is int val && val == orig) {
+              prop.SetValue(obj, scaled);
+              LoggingHelper.Msg($"ChemStation SetOperationTime scaled property CurrentTime {orig}->{scaled}");
+            }
           }
-        }
-      }
-      // also try CurrentTime property if for some reason it starts at orig
-      var prop = type.GetProperty("CurrentTime", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
-      if (prop != null && prop.CanWrite && prop.PropertyType == typeof(int)) {
-        try {
-          var rawValue = prop.GetValue(obj);
-          if (rawValue is int val && val == orig) {
-            prop.SetValue(obj, scaled);
-            LoggingHelper.Msg($"ChemStation SetOperationTime scaled property CurrentTime {orig}->{scaled}");
-          }
-        }
-        catch (Exception ex) {
-          LoggingHelper.Error("ChemStation SetOperationTime property reflection failed", ex);
-        }
-      }
+      }, "ChemStation SetOperationTime failed");
     }
 
     // note: the prefix remains for logging, but we don't mutate the op
@@ -231,18 +197,18 @@ namespace BetterStacksF.Patches {
       object key = (object)op;
       if (_scaledTable.TryGetValue(key, out var info))
         return info.value;
-      try { return (int)op.Recipe.CookTime_Mins; }
-      catch (Exception ex) { LoggingHelper.Error("ChemStation GetScaledTime failed to read recipe time", ex); return 0; }
+      int recipeTime = 0;
+      ReflectionHelper.TryCatchLog(() => { recipeTime = (int)op.Recipe.CookTime_Mins; },
+                            "ChemStation GetScaledTime failed to read recipe time");
+      return recipeTime;
     }
 
     private static int CalculateDisplayRemaining(dynamic op) {
       if (op == null) return 0;
       int recipeTime = GetScaledTime(op);
       int current = 0;
-      try {
-        current = (int)op.CurrentTime;
-      }
-      catch (Exception ex) { LoggingHelper.Error("ChemStation CalculateDisplayRemaining failed to read CurrentTime", ex); }
+      ReflectionHelper.TryCatchLog(() => { current = (int)op.CurrentTime; },
+                            "ChemStation CalculateDisplayRemaining failed to read CurrentTime");
       int rawRemaining = recipeTime - current;
       return rawRemaining < 0 ? 0 : rawRemaining;
     }
@@ -261,21 +227,18 @@ namespace BetterStacksF.Patches {
 
     private static void UpdateCanvasLabels(object canvas, int remaining) {
       if (canvas == null) return;
-      try {
+      ReflectionHelper.TryCatchLog(() => {
         dynamic dyn = canvas;
         dyn.InProgressLabel.text = FormatInProgressTime(remaining);
         if (dyn.InProgressRecipeEntry != null)
           dyn.InProgressRecipeEntry.CookingTimeLabel.text = FormatInProgressTime(remaining);
-      }
-      catch (Exception ex) {
-        LoggingHelper.Error("ChemStation UpdateCanvasLabels failed", ex);
-      }
+      }, "ChemStation UpdateCanvasLabels failed");
     }
 
 
     // UI hooks for timer
     public static void Postfix_UpdateUI(dynamic __instance) {
-      try {
+      ReflectionHelper.TryCatchLog(() => {
         int speed = BetterStacksFMod.CurrentConfig.ChemistryStationSpeed;
         if (speed <= 1) return;
 
@@ -284,10 +247,7 @@ namespace BetterStacksF.Patches {
           var remaining = CalculateDisplayRemaining(station.CurrentCookOperation);
           UpdateCanvasLabels(__instance, remaining);
         }
-      }
-      catch (Exception ex) {
-        LoggingHelper.Error("ChemistryStationPatches.Postfix_UpdateUI failed", ex);
-      }
+      }, "ChemistryStationPatches.Postfix_UpdateUI failed");
     }
 
 

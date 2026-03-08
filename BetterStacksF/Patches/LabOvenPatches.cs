@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Generic;
 using System.Reflection;
 
 using BetterStacksF;
@@ -17,32 +16,11 @@ namespace BetterStacksF.Patches {
     private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<object, object> _scaledOps
         = new System.Runtime.CompilerServices.ConditionalWeakTable<object, object>();
 
-    // when running in DEBUG we dump field/property lists so we can discover
-    // where internal timers live.  doing this every CheckProgress invocation
-    // was extremely expensive; mirror the chemistry station patch and keep a
-    // set of already‑logged types so we only produce output once per type.
-    private static readonly System.Collections.Generic.HashSet<Type> _loggedTypes
-        = new System.Collections.Generic.HashSet<Type>();
 
     // debug helper: print all fields/properties of an operation type once so
     // we can identify the relevant duration field without flooding the log.
     // The method is always compiled but callers should check
     // <see cref="LoggingHelper.EnableVerbose"/> to avoid unnecessary work.
-    private static void DumpOperation(object op) {
-      if (op == null) return;
-      var type = op.GetType();
-      if (_loggedTypes.Contains(type)) return;
-      _loggedTypes.Add(type);
-
-      LoggingHelper.Msg($"LabOven operation type {type.FullName} fields/properties:");
-      foreach (var f in type.GetFields(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)) {
-        try { LoggingHelper.Msg($" field {f.Name} ({f.FieldType.Name}) = {f.GetValue(op)}"); } catch { }
-      }
-      foreach (var p in type.GetProperties(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)) {
-        if (!p.CanRead) continue;
-        try { LoggingHelper.Msg($" prop {p.Name} ({p.PropertyType.Name}) = {p.GetValue(op)}"); } catch { }
-      }
-    }
 
     // apply multiplier when an oven operation is created (local or via RPC)
     private static void ScaleOperation(dynamic op) {
@@ -60,26 +38,20 @@ namespace BetterStacksF.Patches {
         // dump fields/properties of the operation so we can see where the
         // true duration lives.  this will log a bunch of data on first call.
         if (LoggingHelper.EnableVerbose) {
-          try {
-            DumpOperation((object)op);
-          }
-          catch (Exception e) {
-            LoggingHelper.Error("LabOvenPatches introspect failed", e);
-          }
+          ReflectionHelper.DumpObject((object)op);
         }
 
-        int time = (int)op.cookDuration;
+        int time = 0;
+        ReflectionHelper.TryCatchLog(() => { time = (int)op.cookDuration; },
+                              "LabOven ScaleOperation failed to read cookDuration");
         if (time <= 0) {
           // the operation hasn't had its duration initialized yet; ask the
           // object to compute it.  this avoids clobbering a valid value when
           // cookDuration is set to -1 as a sentinel.
-          try {
+          ReflectionHelper.TryCatchLog(() => {
             time = (int)op.GetCookDuration();
             LoggingHelper.Msg($"LabOven ScaleOperation fetched duration via GetCookDuration: {time}");
-          }
-          catch (Exception e) {
-            LoggingHelper.Error("LabOven ScaleOperation failed to call GetCookDuration", e);
-          }
+          }, "LabOven ScaleOperation failed to call GetCookDuration");
         }
         if (time <= 0) // still nonsense, ensure positive to avoid infinite loops
         {
@@ -109,7 +81,8 @@ namespace BetterStacksF.Patches {
         LoggingHelper.Msg($"LabOven ScaleOperation computed scaled={scaled}");
 
         if (scaled != time) {
-          op.cookDuration = scaled;
+          ReflectionHelper.TryCatchLog(() => { op.cookDuration = scaled; },
+                                "LabOven ScaleOperation failed to write cookDuration");
           _scaledOps.Add((object)op, new object());
           LoggingHelper.Msg($"LabOven operation scaled from {time} to {scaled} (speed {speed})");
         }
@@ -121,12 +94,14 @@ namespace BetterStacksF.Patches {
 
     // operation hooks
     public static bool Prefix_SendCookOperation(dynamic __instance, dynamic operation) {
-      ScaleOperation(operation);
+      ReflectionHelper.TryCatchLog(() => ScaleOperation(operation),
+                            "LabOvenPatches.Prefix_SendCookOperation failed");
       return true;
     }
 
     public static bool Prefix_SetCookOperation(dynamic __instance, dynamic conn, dynamic operation) {
-      ScaleOperation(operation);
+      ReflectionHelper.TryCatchLog(() => ScaleOperation(operation),
+                            "LabOvenPatches.Prefix_SetCookOperation failed");
       return true;
     }
 

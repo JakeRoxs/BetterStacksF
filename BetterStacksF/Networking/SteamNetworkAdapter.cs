@@ -37,27 +37,19 @@ namespace BetterStacksF.Networking {
     public event Action<HostConfig>? OnHostConfigReceived;
 
     public void Initialize() {
-      try {
-        // Always defer actual SteamNetworkClient construction to the per-frame processing loop.
-        // Calling into Steamworks synchronously during mod initialization can race and throw
-        // "Steamworks is not initialized" even when SteamNetworkUtils reports available.
-        // ProcessIncomingMessages will perform the real TryInitClient() with backoff when Steam is ready.
-        _deferredInit = true;
-        _nextInitAttempt = DateTime.UtcNow; // allow the loop to attempt init immediately when ready
-        if (!_deferredInitLogged) {
-          LoggingHelper.Msg("[SteamNetworkAdapter] Initialization deferred — will attempt to initialize when Steam is ready (processed in the update loop).");
-          _deferredInitLogged = true;
-        }
-        return;
+      // defer real construction to the update loop; Steam may not yet be ready.
+      _deferredInit = true;
+      _nextInitAttempt = DateTime.UtcNow; // try immediately when the loop runs
+      if (!_deferredInitLogged) {
+        LoggingHelper.Msg("[SteamNetworkAdapter] Initialization deferred — will attempt to initialize when Steam is ready (processed in the update loop).");
+        _deferredInitLogged = true;
       }
-      catch (Exception ex) {
-        LoggingHelper.Warning($"[SteamNetworkAdapter] Initialize failed: {ex.Message}");
-        _client = null;
-        IsInitialized = false;
-      }
+
     }
 
     private void TryInitClient() {
+      // diagnostics: record when we make an explicit initialization attempt
+      LoggingHelper.Msg($"[SteamNetworkAdapter] TryInitClient invoked (deferred={_deferredInit}, now={DateTime.UtcNow:O})");
       try {
         _client = new SteamNetworkClient();
         _client.Initialize();
@@ -70,9 +62,7 @@ namespace BetterStacksF.Networking {
         try { _client?.Dispose(); } catch { }
         _client = null;
         IsInitialized = false;
-        // Mark as deferred so ProcessIncomingMessages will retry with backoff instead of failing permanently.
-        _deferredInit = true;
-        // Back off before next attempt to avoid spamming the log.
+        _deferredInit = true; // retry later
         _nextInitAttempt = DateTime.UtcNow + InitRetryInterval;
       }
     }
@@ -87,19 +77,20 @@ namespace BetterStacksF.Networking {
     }
 
     public void ProcessIncomingMessages() {
-      // If initialization was deferred because Steam wasn't ready, attempt it again (with backoff).
+      // re‑attempt initialization if we deferred earlier
       if (!IsInitialized) {
-        if (_deferredInit && SteamNetworkLib.Utilities.SteamNetworkUtils.IsSteamInitialized() && DateTime.UtcNow >= _nextInitAttempt)
-          TryInitClient();
-
-        // Nothing to process until the client is initialized.
-        if (!IsInitialized || _client == null) return;
+        if (_deferredInit) {
+          bool steamReady = SteamNetworkLib.Utilities.SteamNetworkUtils.IsSteamInitialized();
+          LoggingHelper.Msg($"[SteamNetworkAdapter] deferred init check: steamReady={steamReady}, nextAttempt={_nextInitAttempt:O}, now={DateTime.UtcNow:O}");
+          if (steamReady && DateTime.UtcNow >= _nextInitAttempt) {
+            TryInitClient();
+          }
+        }
+        if (!IsInitialized || _client == null) // still not ready
+            return;
       }
 
-      // Capture a local copy so flow analysis can prove non-nullability.
-      var client = _client;
-      if (client == null) // defensive but should never hit
-        return;
+      var client = _client!; // non-null now
 
       try {
         client.ProcessIncomingMessages();
@@ -111,21 +102,26 @@ namespace BetterStacksF.Networking {
         var value = client.GetLobbyData("BetterStacks_HostConfig");
         if (value != _lastLobbyHostConfigValue) {
           _lastLobbyHostConfigValue = value;
-          if (!string.IsNullOrEmpty(value)) {
-            try {
-              var hostCfg = JsonConvert.DeserializeObject<HostConfig>(value);
-              if (hostCfg != null) OnHostConfigReceived?.Invoke(hostCfg);
-            }
-            catch (Exception ex) {
-              LoggingHelper.Warning($"[SteamNetworkAdapter] HostConfig deserialize failed: {ex.Message}");
-            }
-          }
+          if (!string.IsNullOrEmpty(value))
+            ProcessHostConfig(value);
         }
       }
       catch (Exception ex) {
         // Mark the adapter as not initialized to prevent log spam and repeated failures.
         IsInitialized = false;
         LoggingHelper.Warning($"[SteamNetworkAdapter] ProcessIncomingMessages error: {ex.Message}");
+      }
+
+    }
+
+    private void ProcessHostConfig(string value) {
+      try {
+        var hostCfg = JsonConvert.DeserializeObject<HostConfig>(value);
+        if (hostCfg != null)
+          OnHostConfigReceived?.Invoke(hostCfg);
+      }
+      catch (Exception ex) {
+        LoggingHelper.Warning($"[SteamNetworkAdapter] HostConfig deserialize failed: {ex.Message}");
       }
     }
 

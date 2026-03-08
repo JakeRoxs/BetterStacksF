@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 
@@ -31,8 +30,6 @@ namespace BetterStacksF.Config {
     private static int _cachedDefCount = -1;
     private static Dictionary<EItemCategory, List<S1API.Items.ItemDefinition>>
         _stackablesByCategory = new Dictionary<EItemCategory, List<S1API.Items.ItemDefinition>>();
-    private static readonly ConcurrentDictionary<Type, bool> _typeHasStackLimitCache =
-        new ConcurrentDictionary<Type, bool>();
 
     /// <summary>
     /// Hooked at <see cref="S1API.Lifecycle.GameLifecycle.OnPreLoad"/> by the mod initializer.
@@ -101,9 +98,13 @@ namespace BetterStacksF.Config {
               continue;
             }
 
-            if (!ReflectionHelper.TryGetStackLimit(def, out int currentStack)) {
-              LoggingHelper.Warning($"Skipping {def.Name} ({defType.Name}) — unable to read StackLimit");
-              continue;
+            int currentStack;
+            try {
+                currentStack = def.StackLimit;
+            }
+            catch (Exception ex) {
+                LoggingHelper.Error($"Failed to read StackLimit for {def.Name} ({defType.Name})", ex);
+                continue; // skip this definition and keep processing others
             }
 
             if (!_originalStackLimits.ContainsKey(def.ID)) {
@@ -131,7 +132,7 @@ namespace BetterStacksF.Config {
                   int adjusted = Math.Max(1, (int)Math.Round(currentStack * ((double)currentMod / prevCatMod)));
                   LoggingHelper.Msg($"Adjusted newly-created {def.Name} ({category}) stack limit from {currentStack} to {adjusted} " +
                                   $"(oldMod={prevCatMod}, newMod={currentMod})");
-                  ReflectionHelper.TrySetStackLimit(def, adjusted);
+                  def.StackLimit = adjusted;
                   currentStack = adjusted;
                 }
 
@@ -168,8 +169,14 @@ namespace BetterStacksF.Config {
 
               LoggingHelper.Msg($"Set {def.Name} ({def.Category}) stack limit from {currentStack} to {newLimit}");
 
-              if (!ReflectionHelper.TrySetStackLimit(def, newLimit))
-                LoggingHelper.Warning($"Cannot set StackLimit on {def.Name} ({defType.Name}) — member is read-only.");
+              // set via wrapper property; should always succeed unless the
+              // underlying definition is somehow locked.
+              try {
+                def.StackLimit = newLimit;
+              }
+              catch (Exception ex) {
+                LoggingHelper.Error($"Cannot set StackLimit on {def.Name} ({defType.Name})", ex);
+              }
             }
           }
         }
@@ -202,22 +209,14 @@ namespace BetterStacksF.Config {
         LoggingHelper.Error("ApplyStackOverrides failed", ex);
       }
     }
-    private static bool TypeHasStackLimit(Type t) {
-      // ConcurrentDictionary handles the thread‑safe check/insert for us.  The
-      // factory delegate will only be invoked once per key even if multiple
-      // threads race to populate it.
-      return _typeHasStackLimitCache.GetOrAdd(t, ReflectionHelper.HasStackLimit);
-    }
 
     private static void EnsureStackableCache(List<S1API.Items.ItemDefinition> allDefs) {
       if (allDefs.Count == _cachedDefCount)
         return;
 
-      // if the caller has added a bunch of new defs of types we've seen
-      // before, the type cache avoids repeated reflection; if new types appear
-      // we'll populate the cache as we go.
+      // every item definition has a stack limit, so we can skip the slower
+      // type inspection step entirely – just group them by category.
       _stackablesByCategory = allDefs
-          .Where(d => TypeHasStackLimit(d.GetType()))
           .GroupBy(d => (EItemCategory)d.Category)
           .ToDictionary(g => g.Key, g => g.ToList());
 
