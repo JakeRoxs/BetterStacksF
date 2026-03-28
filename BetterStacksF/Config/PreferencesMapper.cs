@@ -13,7 +13,6 @@ using Il2CppScheduleOne.ItemFramework;
 using MelonLoader;
 
 
-using S1API.Lifecycle;
 
 namespace BetterStacksF.Config {
   internal static class PreferencesMapper {

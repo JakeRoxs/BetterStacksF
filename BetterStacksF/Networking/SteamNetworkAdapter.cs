@@ -16,11 +16,6 @@ namespace BetterStacksF.Networking {
     private SteamNetworkClient? _client;
     private string? _lastLobbyHostConfigValue;
 
-    // Deferred initialization helpers — Steam may not be ready at OnInitializeMelon time.
-    private bool _deferredInit = false;
-    private bool _deferredInitLogged = false;
-    private DateTime _nextInitAttempt = DateTime.MinValue;
-    private static readonly TimeSpan InitRetryInterval = TimeSpan.FromSeconds(5);
 
     public bool IsHost => _client?.IsHost ?? false;
     public bool IsInitialized { get; private set; } = false;
@@ -31,39 +26,45 @@ namespace BetterStacksF.Networking {
     // How many members are in the current lobby (0 if not in a lobby).
     public int LobbyMemberCount => _client?.CurrentLobby?.MemberCount ?? 0;
 
-    // True when initialization is deferred because Steam wasn't ready at first attempt.
-    public bool InitializationDeferred => _deferredInit;
 
     public event Action<HostConfig>? OnHostConfigReceived;
 
+    /// <summary>
+    /// Create and initialize the underlying <see cref="SteamNetworkClient"/>.
+    /// Callers must ensure SteamNetworkLib is ready (this typically means
+    /// scheduling the call from a post‑load lifecycle event such as
+    /// <c>GameLifecycle.OnLoadComplete</c>).  If initialization fails the
+    /// adapter remains uninitialized and the caller may choose to fall back to
+    /// another adapter.
+    /// </summary>
     public void Initialize() {
-      // defer real construction to the update loop; Steam may not yet be ready.
-      _deferredInit = true;
-      _nextInitAttempt = DateTime.UtcNow; // try immediately when the loop runs
-      if (!_deferredInitLogged) {
-        LoggingHelper.Msg("[SteamNetworkAdapter] Initialization deferred — will attempt to initialize when Steam is ready (processed in the update loop).");
-        _deferredInitLogged = true;
-      }
-
+      TryInitClient();
     }
 
-    private void TryInitClient() {
-      // diagnostics: record when we make an explicit initialization attempt
-      LoggingHelper.Msg($"[SteamNetworkAdapter] TryInitClient invoked (deferred={_deferredInit}, now={DateTime.UtcNow:O})");
+    // internal so the mod initializer can invoke it directly; the public
+    // <see cref="Initialize"/> method simply forwards here.
+    internal void TryInitClient() {
+      LoggingHelper.Msg($"[SteamNetworkAdapter] TryInitClient invoked (now={DateTime.UtcNow:O})");
       try {
         _client = new SteamNetworkClient();
         _client.Initialize();
         IsInitialized = true;
-        _deferredInit = false;
         LoggingHelper.Init("[SteamNetworkAdapter] typed adapter initialized");
       }
       catch (Exception initEx) {
-        LoggingHelper.Warning($"[SteamNetworkAdapter] Initialize failed: {initEx.Message}");
+        // failures during early initialization are expected until Steamworks
+        // becomes fully ready.  log a verbose/informational message instead
+        // of a warning so startup isn't cluttered when Steam is just slow.
+        bool isSteamNotReady = initEx.Message.Contains("Steamworks is not initialized");
+        if (!isSteamNotReady || LoggingHelper.EnableVerbose) {
+          LoggingHelper.Warning($"[SteamNetworkAdapter] Initialize failed: {initEx.Message}");
+        } else {
+          LoggingHelper.Msg("[SteamNetworkAdapter] initialization deferred (Steam not ready)");
+        }
         try { _client?.Dispose(); } catch { }
         _client = null;
         IsInitialized = false;
-        _deferredInit = true; // retry later
-        _nextInitAttempt = DateTime.UtcNow + InitRetryInterval;
+        // caller may choose to fall back if initialization didn't work
       }
     }
 
@@ -71,24 +72,11 @@ namespace BetterStacksF.Networking {
       try { _client?.Dispose(); } catch { }
       _client = null;
       IsInitialized = false;
-      _deferredInit = false;
-      _deferredInitLogged = false;
-      _nextInitAttempt = DateTime.MinValue;
     }
 
     public void ProcessIncomingMessages() {
-      // re‑attempt initialization if we deferred earlier
-      if (!IsInitialized) {
-        if (_deferredInit) {
-          bool steamReady = SteamNetworkLib.Utilities.SteamNetworkUtils.IsSteamInitialized();
-          LoggingHelper.Msg($"[SteamNetworkAdapter] deferred init check: steamReady={steamReady}, nextAttempt={_nextInitAttempt:O}, now={DateTime.UtcNow:O}");
-          if (steamReady && DateTime.UtcNow >= _nextInitAttempt) {
-            TryInitClient();
-          }
-        }
-        if (!IsInitialized || _client == null) // still not ready
-            return;
-      }
+      if (!IsInitialized || _client == null)
+        return;
 
       var client = _client!; // non-null now
 

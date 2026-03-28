@@ -8,7 +8,6 @@ using Il2CppScheduleOne.ItemFramework;
 
 using MelonLoader;
 
-using S1API.Lifecycle;
 
 namespace BetterStacksF.Config {
   /// <summary>
@@ -25,9 +24,9 @@ namespace BetterStacksF.Config {
       if (present.Count == 0) {
         if (!_registrationScheduled) {
           _registrationScheduled = true;
-          GameLifecycle.OnPreLoad += () => {
+          S1ApiCompat.TrySubscribeToGameLifecycleEvent("OnPreLoad", () => {
             try { RegisterCategoryMultipliersFromGameDefs(); } catch { }
-          };
+          });
           // we deliberately do not log here; the general "item definitions not
           // ready" message from the stack override manager is sufficient and
           // avoids spamming the log when verbose logging is enabled.
@@ -103,6 +102,10 @@ namespace BetterStacksF.Config {
     }
 
     private static HashSet<string> GetPresentCategoryNames() {
+      if (!S1ApiCompat.IsAvailable) {
+        return new HashSet<string>();
+      }
+
       try {
         var defs = S1API.Items.ItemManager.GetAllItemDefinitions();
         if (defs == null || defs.Count == 0)

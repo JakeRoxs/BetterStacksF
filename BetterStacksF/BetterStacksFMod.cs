@@ -20,7 +20,6 @@ using MelonLoader.Utils;
 
 using Newtonsoft.Json;
 
-using S1API.Lifecycle;
 
 [assembly: MelonInfo(typeof(BetterStacksFMod), "BetterStacksF", "0.0.7", "JakeRoxs")]
 [assembly: MelonGame("TVGS", "Schedule I")]
@@ -33,6 +32,10 @@ public class BetterStacksFMod : MelonMod {
   // keep track of the last-known preferences state so we can compare when
   // `OnPreferencesSaved` fires.
   private ModConfig? _lastPrefs;
+
+  // once created we hold a reference so update ticks can drive initialization
+  // when SteamNetworkLib becomes ready.
+  private SteamNetworkAdapter? _steamAdapter;
 
   // Compute multiplier for a category from the supplied config (falling back to the
   // globally loaded config and logging missing defaults).
@@ -74,6 +77,9 @@ public class BetterStacksFMod : MelonMod {
     var cfg = ConfigManager.LoadConfig();
     _lastPrefs = cfg;
 
+    // Log whether S1API is available
+    LoggingHelper.Init($"S1API present: {S1ApiCompat.IsAvailable}");
+
     // ensure the category‑multiplier dictionary exists and schedule any
     // deferred game‑defs sync.  this used to be called from
     // ConfigManager.LoadConfig; the coupling has been removed.
@@ -89,50 +95,26 @@ public class BetterStacksFMod : MelonMod {
     // driven via ProcessPendingUpdates.
     StackOverrideManager.ApplyStackOverrides(cfg);
 
-    // diagnostics: log Steam readiness at key lifecycle events to determine when
-    // SteamNetworkLib becomes available.  remove these once the init-hook is
-    // chosen.
-    GameLifecycle.OnPreLoad += () => {
-        bool ready = SteamNetworkLib.Utilities.SteamNetworkUtils.IsSteamInitialized();
-        LoggingHelper.Msg($"[SteamNetworkAdapter diag] OnPreLoad steamReady={ready}");
-    };
-    GameLifecycle.OnLoadComplete += () => {
-        bool ready = SteamNetworkLib.Utilities.SteamNetworkUtils.IsSteamInitialized();
-        LoggingHelper.Msg($"[SteamNetworkAdapter diag] OnLoadComplete steamReady={ready}");
-    };
+    // create the Steam adapter now; we'll poll for Steam readiness in
+    // OnUpdate and initialize it the first time the API is available.
+    _steamAdapter = new SteamNetworkAdapter();
+    NetworkingManager.Initialize(_steamAdapter);
+
 
     // clear reflection dump cache when the scene changes (e.g. returning to
     // main menu) so that subsequent DumpObject calls will log types again.
-    GameLifecycle.OnPreSceneChange += () => ReflectionHelper.ResetDumpCache();
+    S1ApiCompat.TrySubscribeToGameLifecycleEvent("OnPreSceneChange", () => ReflectionHelper.ResetDumpCache());
 
     // also ensure we re-apply overrides when the game does a pre-load pass;
     // this covers the case where item definitions weren't ready during the
     // initial call above and mirrors the behaviour of the old implementation.
-    GameLifecycle.OnPreLoad += ApplyStackOverrides;
+    S1ApiCompat.TrySubscribeToGameLifecycleEvent("OnPreLoad", ApplyStackOverrides);
 
     // PreferenceMapper.EnsureRegistered (called by LoadConfig) has already
     // scheduled registration of category-multiplier entries.  an additional
     // explicit call here was previously causing a second disk read during
     // startup.
 
-    // local adapter when Steam is definitely not available.
-    var steamAdapter = new SteamNetworkAdapter();
-    NetworkingManager.Initialize(steamAdapter);
-
-    if (!NetworkingManager.CurrentAdapter.IsInitialized) {
-      // If the Steam adapter deferred initialization because Steam/Steamworks wasn't ready yet,
-      // keep the Steam adapter as the active adapter so it can attempt initialization later.
-      if (steamAdapter is SteamNetworkAdapter s && s.InitializationDeferred) {
-        LoggingHelper.Msg("Steam adapter initialization deferred — will retry while running.");
-      }
-      else {
-        LoggingHelper.Init("Steam adapter not available — falling back to local adapter.");
-        NetworkingManager.Initialize(new LocalNetworkAdapter());
-      }
-    }
-    else {
-      LoggingHelper.Init("SteamNetworkAdapter initialized.");
-    }
 
     // configuration logging is already handled by ConfigManager; the
     // previous call produces a nicely formatted snapshot.  suppress this
@@ -165,29 +147,88 @@ public class BetterStacksFMod : MelonMod {
     // cauldron: patch all StartCookOperation overloads
     {
       var cauldronType = typeof(Cauldron);
-      var prefix = new HarmonyMethod(typeof(CauldronPatches), nameof(CauldronPatches.Prefix_StartCookOperation));
+      // also intercept UI open so we get slots before cooking starts
+      var canvasType = AccessTools.TypeByName("Il2CppScheduleOne.UI.Stations.CauldronCanvas");
+      if (canvasType != null) {
+        var setOpen = AccessTools.Method(canvasType, "SetIsOpen");
+        if (setOpen != null) {
+          harmony.Patch(setOpen, prefix: new HarmonyMethod(typeof(CauldronPatches), nameof(CauldronPatches.Prefix_CauldronCanvas_SetIsOpen)));
+          LoggingHelper.Msg("Patched CauldronCanvas.SetIsOpen");
+        } else {
+          LoggingHelper.Warning("CauldronCanvas.SetIsOpen method not found");
+        }
+      } else {
+        LoggingHelper.Warning("CauldronCanvas type not found");
+      }
+      var prefixStart = new HarmonyMethod(typeof(CauldronPatches), nameof(CauldronPatches.Prefix_StartCookOperation));
+      var postfixStart = new HarmonyMethod(typeof(CauldronPatches), nameof(CauldronPatches.Postfix_StartCookOperation));
+      int count = 0;
       foreach (var m in cauldronType.GetMethods(System.Reflection.BindingFlags.Instance |
                                                 System.Reflection.BindingFlags.Public |
                                                 System.Reflection.BindingFlags.NonPublic)) {
-        if (m.Name == "StartCookOperation")
-          harmony.Patch(m, prefix: prefix);
+        if (m.Name == "StartCookOperation") {
+          harmony.Patch(m, prefix: prefixStart, postfix: postfixStart);
+          count++;
+        }
       }
+      LoggingHelper.Msg($"Patched {count} StartCookOperation overload(s) with prefix+postfix");
 
       // also intercept the remaining cook‑operation helpers so our flexible
       // consumption logic runs during networking/finalization paths.  these
       // methods are unique rather than overloads, so call Patch individually.
-      harmony.Patch(
-          AccessTools.Method(cauldronType, "FinishCookOperation"),
-          prefix: new HarmonyMethod(typeof(CauldronPatches), nameof(CauldronPatches.Prefix_FinishCookOperation))
-      );
-      harmony.Patch(
-          AccessTools.Method(cauldronType, "SendCookOperation"),
-          prefix: new HarmonyMethod(typeof(CauldronPatches), nameof(CauldronPatches.Prefix_SendCookOperation))
-      );
-      harmony.Patch(
-          AccessTools.Method(cauldronType, "SetCookOperation"),
-          prefix: new HarmonyMethod(typeof(CauldronPatches), nameof(CauldronPatches.Prefix_SetCookOperation))
-      );
+      var finish = AccessTools.Method(cauldronType, "FinishCookOperation");
+      if (finish != null) {
+        harmony.Patch(finish, prefix: new HarmonyMethod(typeof(CauldronPatches), nameof(CauldronPatches.Prefix_FinishCookOperation)));
+        LoggingHelper.Msg("Patched FinishCookOperation");
+      } else
+        LoggingHelper.Warning("FinishCookOperation method not found on Cauldron");
+
+      var send = AccessTools.Method(cauldronType, "SendCookOperation");
+      if (send != null) {
+        harmony.Patch(send,
+            prefix: new HarmonyMethod(typeof(CauldronPatches), nameof(CauldronPatches.Prefix_SendCookOperation)),
+            postfix: new HarmonyMethod(typeof(CauldronPatches), nameof(CauldronPatches.Postfix_SendCookOperation)));
+        LoggingHelper.Msg("Patched SendCookOperation");
+      } else
+        LoggingHelper.Warning("SendCookOperation method not found on Cauldron");
+
+      var set = AccessTools.Method(cauldronType, "SetCookOperation");
+      if (set != null) {
+        harmony.Patch(set,
+            prefix: new HarmonyMethod(typeof(CauldronPatches), nameof(CauldronPatches.Prefix_SetCookOperation)),
+            postfix: new HarmonyMethod(typeof(CauldronPatches), nameof(CauldronPatches.Postfix_SetCookOperation)));
+        LoggingHelper.Msg("Patched SetCookOperation");
+      } else
+        LoggingHelper.Warning("SetCookOperation method not found on Cauldron");
+
+      // ingredient visuals update – patch this to catch the moment when slots
+      // become available for consumption (called whenever ingredients are
+      // supplied to the cauldron)
+      var updateVis = AccessTools.Method(cauldronType, "UpdateIngredientVisuals");
+      if (updateVis != null) {
+        harmony.Patch(updateVis, prefix: new HarmonyMethod(typeof(CauldronPatches), nameof(CauldronPatches.Prefix_UpdateIngredientVisuals)));
+        LoggingHelper.Msg("Patched UpdateIngredientVisuals");
+      } else {
+        LoggingHelper.Warning("UpdateIngredientVisuals method not found on Cauldron");
+      }
+    }
+
+    // patch CauldronTask so we can capture ingredient state earlier in the
+    // minigame while slots are still populated.  automated tasks invoke
+    // CheckStep_CombineIngredients shortly before pressing Start.
+    {
+      var taskType = AccessTools.TypeByName("Il2CppScheduleOne.PlayerTasks.CauldronTask");
+      if (taskType != null) {
+        var method = AccessTools.Method(taskType, "CheckStep_CombineIngredients");
+        if (method != null) {
+          harmony.Patch(method, prefix: new HarmonyMethod(typeof(CauldronPatches), nameof(CauldronPatches.Prefix_TaskCombineIngredients)));
+          LoggingHelper.Msg("Patched CauldronTask.CheckStep_CombineIngredients");
+        } else {
+          LoggingHelper.Warning("CauldronTask.CheckStep_CombineIngredients not found");
+        }
+      } else {
+        LoggingHelper.Warning("CauldronTask type not found");
+      }
     }
 
     // chemistry station (ops + UI)
@@ -250,7 +291,7 @@ public class BetterStacksFMod : MelonMod {
 
     bool changed = EnsureCategoryDictionaryExists(cfg);
 
-    if (addEnumKeys) {
+    if (addEnumKeys && S1ApiCompat.IsAvailable) {
       changed |= TryAddOrPruneEnumKeys(cfg);
     }
 
@@ -306,7 +347,7 @@ public class BetterStacksFMod : MelonMod {
     // external ModConfig reference.
     if (!_ensureCatMultScheduled) {
       _ensureCatMultScheduled = true;
-      GameLifecycle.OnPreLoad += DeferredCategoryMultiplierUpdate;
+      S1ApiCompat.TrySubscribeToGameLifecycleEvent("OnPreLoad", DeferredCategoryMultiplierUpdate);
       LoggingHelper.Msg("Item definitions not ready; scheduled category-multiplier update for OnPreLoad.");
 
       return true;
@@ -320,7 +361,7 @@ public class BetterStacksFMod : MelonMod {
   private static void DeferredCategoryMultiplierUpdate() {
     try {
       EnsureCategoryMultipliers(ConfigManager.CurrentConfig, true);
-      GameLifecycle.OnPreLoad -= DeferredCategoryMultiplierUpdate;
+      S1ApiCompat.TryUnsubscribeFromGameLifecycleEvent("OnPreLoad", DeferredCategoryMultiplierUpdate);
     }
     catch (Exception ex) {
       LoggingHelper.Error("DeferredCategoryMultiplierUpdate failed", ex);
@@ -344,6 +385,23 @@ public class BetterStacksFMod : MelonMod {
   public static void EnqueueConfigUpdate(ModConfig cfg) => ConfigManager.EnqueueConfigUpdate(cfg);
 
   public override void OnUpdate() {
+    // attempt Steam adapter initialization when the library becomes ready
+    if (_steamAdapter != null && !_steamAdapter.IsInitialized) {
+      bool steamReady = SteamNetworkLib.Utilities.SteamNetworkUtils.IsSteamInitialized();
+      if (steamReady) {
+        LoggingHelper.Msg("Steam ready, trying adapter init");
+        _steamAdapter.Initialize();
+        if (_steamAdapter.IsInitialized) {
+          LoggingHelper.Init("SteamNetworkAdapter initialized.");
+        } else {
+          // initialization failed; don't give up yet.
+          LoggingHelper.Msg("Steam adapter init failed, will retry");
+        }
+      } else {
+        // Steam not running yet
+      }
+    }
+
     // Drive incoming SteamNetworkLib callbacks / message processing.
     try { NetworkingManager.CurrentAdapter?.ProcessIncomingMessages(); } catch { }
 

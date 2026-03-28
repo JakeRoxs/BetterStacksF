@@ -35,6 +35,11 @@ namespace BetterStacksF.Config {
     /// Hooked at <see cref="S1API.Lifecycle.GameLifecycle.OnPreLoad"/> by the mod initializer.
     /// </summary>
     public static void ApplyStackOverrides(ModConfig cfg) {
+      if (!S1ApiCompat.IsAvailable) {
+        LoggingHelper.Msg("S1API not available; skipping stack override logic.");
+        return;
+      }
+
       // simplified stub for debugging syntax issues
       try {
         cfg ??= new ModConfig();
