@@ -37,9 +37,14 @@ public class BetterStacksFMod : MelonMod {
   private static DateTime _lastSteamInitAttempt = DateTime.MinValue;
   private static int _steamInitFailures = 0;
 
-  // once created we hold a reference so update ticks can drive initialization
-  // when SteamNetworkLib becomes ready.
-  private SteamNetworkAdapter? _steamAdapter;
+  // Track steam adapter in a lib-agnostic way to avoid hard dependency in this file.
+  private INetworkAdapter? _steamAdapter;
+
+  // Track checks/fallback state so we only log missing SteamNetworkLib once.
+  private static bool _steamNetworkLibCheckDone = false;
+  private static bool _steamNetworkLibAvailable = false;
+  private static bool _steamNetworkLibFallbackLogged = false;
+  private static bool _steamReadinessCheckFailedLogged = false;
 
   // Compute multiplier for a category from the supplied config (falling back to the
   // globally loaded config and logging missing defaults).
@@ -105,7 +110,7 @@ public class BetterStacksFMod : MelonMod {
     _lastPrefs = cfg;
 
     // Log whether S1API is available
-    LoggingHelper.Init($"S1API present: {S1ApiCompat.IsAvailable}");
+    LoggingHelper.Msg($"S1API present: {S1ApiCompat.IsAvailable}");
 
     // ensure the category‑multiplier dictionary exists and schedule any
     // deferred game‑defs sync.  this used to be called from
@@ -127,18 +132,21 @@ public class BetterStacksFMod : MelonMod {
     NetworkingManager.Initialize(new LocalNetworkAdapter());
 
     try {
-      if (Type.GetType("SteamNetworkLib.SteamNetworkClient, SteamNetworkLib") != null) {
-        _steamAdapter = new SteamNetworkAdapter();
-        LoggingHelper.Msg("SteamNetworkLib detected; deferring Steam adapter initialize until ready.");
+      _steamNetworkLibAvailable = CheckSteamNetworkLibAvailability();
+
+      if (_steamNetworkLibAvailable) {
+        _steamAdapter = CreateSteamNetworkAdapter();
+        if (_steamAdapter != null) {
+          LoggingHelper.Msg("SteamNetworkLib detected; deferring Steam adapter initialize until ready.");
+        } else {
+          EnsureLocalFallback("SteamNetworkAdapter instance creation failed; using local adapter.");
+        }
       } else {
-        LoggingHelper.Warning("SteamNetworkLib not available at runtime; using local adapter.");
-        _steamAdapter = null;
+        EnsureLocalFallback("SteamNetworkLib not available at runtime; using local adapter.");
       }
     }
     catch (Exception ex) {
-      LoggingHelper.Warning($"Steam network adapter initialization failed: {ex.Message}");
-      _steamAdapter = null;
-      NetworkingManager.Initialize(new LocalNetworkAdapter());
+      EnsureLocalFallback($"Steam network adapter initialization failed: {ex.Message}");
     }
 
     // clear reflection dump cache when the scene changes (e.g. returning to
@@ -557,47 +565,94 @@ public class BetterStacksFMod : MelonMod {
 
   public static void EnqueueConfigUpdate(ModConfig cfg) => ConfigManager.EnqueueConfigUpdate(cfg);
 
+  private bool CheckSteamNetworkLibAvailability() {
+    if (_steamNetworkLibCheckDone) return _steamNetworkLibAvailable;
+
+    _steamNetworkLibCheckDone = true;
+    _steamNetworkLibAvailable = Type.GetType("SteamNetworkLib.SteamNetworkClient, SteamNetworkLib", false) != null;
+
+    return _steamNetworkLibAvailable;
+  }
+
+  private INetworkAdapter? CreateSteamNetworkAdapter() {
+    try {
+      var adapterType = Type.GetType("BetterStacksF.Networking.SteamNetworkAdapter, BetterStacksF", false);
+      if (adapterType == null || !typeof(INetworkAdapter).IsAssignableFrom(adapterType))
+        return null;
+
+      return Activator.CreateInstance(adapterType) as INetworkAdapter;
+    }
+    catch (Exception ex) {
+      LoggingHelper.Warning($"SteamNetworkAdapter reflection create failed: {ex.Message}");
+      return null;
+    }
+  }
+
+  private bool TryGetSteamReady() {
+    var targetType = Type.GetType("SteamNetworkLib.Utilities.SteamNetworkUtils, SteamNetworkLib", false);
+    if (targetType == null) {
+      _steamNetworkLibAvailable = false;
+      EnsureLocalFallback("SteamNetworkLib unavailable during readiness check; using local adapter.");
+      return false;
+    }
+
+    var method = targetType.GetMethod("IsSteamInitialized", BindingFlags.Public | BindingFlags.Static);
+    if (method == null) return false;
+
+    try {
+      var result = method.Invoke(null, null);
+      return result is bool ready && ready;
+    }
+    catch (Exception ex) {
+      if (!_steamReadinessCheckFailedLogged) {
+        LoggingHelper.Warning($"Steam readiness check failed (reflection): {ex.Message}");
+        _steamReadinessCheckFailedLogged = true;
+      }
+      return false;
+    }
+  }
+
+  private void EnsureLocalFallback(string message) {
+    if (!_steamNetworkLibFallbackLogged) {
+      LoggingHelper.Warning(message);
+      _steamNetworkLibFallbackLogged = true;
+    }
+    _steamAdapter = null;
+    NetworkingManager.Initialize(new LocalNetworkAdapter());
+  }
+
   public override void OnUpdate() {
     // attempt Steam adapter initialization when the library becomes ready
     if (_steamAdapter != null && !_steamAdapter.IsInitialized) {
-      bool steamReady = false;
-      try {
-        steamReady = SteamNetworkLib.Utilities.SteamNetworkUtils.IsSteamInitialized();
-      }
-      catch (Exception ex) {
-        LoggingHelper.Warning($"Steam readiness check failed: {ex.Message}");
-        steamReady = false;
+      if (!TryGetSteamReady()) {
+        return;
       }
 
-      if (steamReady) {
-        // retry backoff: don't hammer init on every frame (allow 5s between attempts)
-        var now = DateTime.UtcNow;
-        if ((now - _lastSteamInitAttempt).TotalSeconds < 5 && _steamInitFailures > 0) {
-          return;
-        }
+      // retry backoff: don't hammer init on every frame (allow 5s between attempts)
+      var now = DateTime.UtcNow;
+      if ((now - _lastSteamInitAttempt).TotalSeconds < 5 && _steamInitFailures > 0) {
+        return;
+      }
 
-        _lastSteamInitAttempt = now;
+      _lastSteamInitAttempt = now;
 
-        LoggingHelper.Msg("Steam ready, trying adapter init");
-        _steamAdapter.Initialize();
-        if (_steamAdapter.IsInitialized) {
-          LoggingHelper.Init("SteamNetworkAdapter initialized.");
-          _steamInitFailures = 0;
-          NetworkingManager.Shutdown();
-          NetworkingManager.Initialize(_steamAdapter);
+      LoggingHelper.Msg("Steam ready, trying adapter init");
+      _steamAdapter.Initialize();
+      if (_steamAdapter.IsInitialized) {
+        LoggingHelper.Init("SteamNetworkAdapter initialized.");
+        _steamInitFailures = 0;
+        NetworkingManager.Shutdown();
+        NetworkingManager.Initialize(_steamAdapter);
 
-          // After switching to the Steam adapter, rebroadcast active host config
-          // so connected clients can get the authoritative settings via lobby data.
-          if (NetworkingManager.CurrentAdapter?.IsHost ?? false) {
-            NetworkingManager.BroadcastHostConfig(new HostConfig { Config = ConfigManager.CurrentConfig });
-          }
-        } else {
-          _steamInitFailures++;
-          // initialization failed; don't give up yet.
-          LoggingHelper.Msg($"Steam adapter init failed, will retry (attempt {_steamInitFailures})");
+        // After switching to the Steam adapter, rebroadcast active host config
+        // so connected clients can get the authoritative settings via lobby data.
+        if (NetworkingManager.CurrentAdapter?.IsHost ?? false) {
+          NetworkingManager.BroadcastHostConfig(new HostConfig { Config = ConfigManager.CurrentConfig });
         }
       } else {
-        // Steam not running yet or library missing
+        _steamInitFailures++;
+        // initialization failed; don't give up yet.
+        LoggingHelper.Msg($"Steam adapter init failed, will retry (attempt {_steamInitFailures})");
       }
     }
 
