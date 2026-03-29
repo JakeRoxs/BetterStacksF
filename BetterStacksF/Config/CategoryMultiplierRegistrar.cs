@@ -109,25 +109,29 @@ namespace BetterStacksF.Config {
         if (defs == null || defs.Count == 0)
           return new HashSet<string>();
 
-        // instrument each definition with numeric category ID + string for debugging.
-        foreach (var def in defs) {
-          try {
-            var gameRawValue = GetRawCategoryName(def);
-            var numericCategory = GetRawCategoryNumericValue(def);
+        bool verbose = LoggingHelper.EnableVerbose;
 
-            var s1apiValue = "<none>";
+        // instrument each definition with numeric category ID + string for debugging.
+        if (verbose) {
+          foreach (var def in defs) {
             try {
-              s1apiValue = def.Category.ToString();
+              var gameRawValue = GetRawCategoryName(def);
+              var numericCategory = GetRawCategoryNumericValue(def);
+
+              var s1apiValue = "<none>";
+              try {
+                s1apiValue = def.Category.ToString();
+              }
+              catch {
+                s1apiValue = "<s1api unavailable>";
+              }
+              // Show game-provided raw category via reflection/backing field and
+              // compare it to S1API layer output.
+              LoggingHelper.Msg($"Item category debug: {def.Name} (game-category='{gameRawValue}', s1api-category='{s1apiValue}', id={numericCategory}, resolved='{BetterStacksFMod.NormalizeCategoryKey(gameRawValue)}')");
             }
-            catch {
-              s1apiValue = "<s1api unavailable>";
+            catch (Exception ex) {
+              LoggingHelper.Warning($"Failed to log category for item {def.Name}: {ex.Message}");
             }
-            // Show game-provided raw category via reflection/backing field and
-            // compare it to S1API layer output.
-            LoggingHelper.Msg($"Item category debug: {def.Name} (game-category='{gameRawValue}', s1api-category='{s1apiValue}', id={numericCategory}, resolved='{BetterStacksFMod.NormalizeCategoryKey(gameRawValue)}')");
-          }
-          catch (Exception ex) {
-            LoggingHelper.Warning($"Failed to log category for item {def.Name}: {ex.Message}");
           }
         }
 
@@ -136,7 +140,9 @@ namespace BetterStacksF.Config {
           .Where(s => !string.IsNullOrWhiteSpace(s))
           .Distinct()
           .ToList();
-        LoggingHelper.Msg($"Raw item categories from game defs: {string.Join(", ", rawCategories)}");
+
+        if (verbose)
+          LoggingHelper.Msg($"Raw item categories from game defs: {string.Join(", ", rawCategories)}");
 
         var present = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var categoryName in rawCategories) {
@@ -144,7 +150,7 @@ namespace BetterStacksF.Config {
           if (!string.IsNullOrWhiteSpace(normalizedName)) {
             present.Add(normalizedName);
 
-            if (!string.Equals(normalizedName, categoryName, StringComparison.OrdinalIgnoreCase))
+            if (verbose && !string.Equals(normalizedName, categoryName, StringComparison.OrdinalIgnoreCase))
               LoggingHelper.Msg($"Mapped unknown raw category '{categoryName}' to '{normalizedName}'.");
 
             continue;
@@ -153,15 +159,17 @@ namespace BetterStacksF.Config {
           if (Enum.TryParse<S1API.Items.ItemCategory>(categoryName, true, out var catValue)) {
             if (Enum.IsDefined(typeof(S1API.Items.ItemCategory), catValue)) {
               present.Add(categoryName);
-            } else {
+            } else if (verbose) {
               LoggingHelper.Msg($"Skipping unknown numeric item category from game defs: '{categoryName}'");
             }
-          } else {
+          } else if (verbose) {
             LoggingHelper.Msg($"Skipping unknown item category from game defs: '{categoryName}'");
           }
         }
 
-        LoggingHelper.Msg($"Valid item categories after enum filtering: {string.Join(", ", present)}");
+        if (verbose)
+          LoggingHelper.Msg($"Valid item categories after enum filtering: {string.Join(", ", present)}");
+
         return present;
       }
       catch {

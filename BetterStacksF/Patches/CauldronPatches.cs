@@ -33,11 +33,13 @@ namespace BetterStacksF.Patches {
 
       // prefix_Start: log invocation and snapshot slots for later diff
       try {
-        var msg = "Prefix_StartCookOperation invoked";
-        msg += $" connType={(conn==null?"null":conn.GetType().Name)}";
-        msg += $" qualityType={(quality==null?"null":quality.GetType().Name)}";
-        msg += $" remainingCookTime={remainingCookTime}";
-        LoggingHelper.Msg(msg);
+        if (LoggingHelper.EnableVerbose) {
+          var msg = "Prefix_StartCookOperation invoked";
+          msg += $" connType={(conn==null?"null":conn.GetType().Name)}";
+          msg += $" qualityType={(quality==null?"null":quality.GetType().Name)}";
+          msg += $" remainingCookTime={remainingCookTime}";
+          LoggingHelper.Msg(msg);
+        }
 
         // take a quick snapshot *only if one hasn’t already been recorded*.
         // SendCookOperation will usually fire first and populate the table;
@@ -132,10 +134,10 @@ namespace BetterStacksF.Patches {
     // development via <see cref="LoggingHelper.EnableVerbose"/> to inspect
     // the shape of the dynamic objects we receive from the game.
 
-    private static readonly ConditionalWeakTable<object, FieldInfo?> _cauldronFieldCache
-        = new ConditionalWeakTable<object, FieldInfo?>();
-    private static readonly ConditionalWeakTable<object, FieldInfo?> _cauldronSlotsCache
-        = new ConditionalWeakTable<object, FieldInfo?>();
+    private static readonly ConditionalWeakTable<object, Dictionary<string, FieldInfo?>> _cauldronFieldCache
+        = new ConditionalWeakTable<object, Dictionary<string, FieldInfo?>>();
+    private static readonly ConditionalWeakTable<object, Dictionary<string, FieldInfo?>> _cauldronSlotsCache
+        = new ConditionalWeakTable<object, Dictionary<string, FieldInfo?>>();
     // cache the two most recent slot-count snapshots produced by
     // UpdateIngredientVisuals.  We need both the current and the previous
     // values because the UI update can fire *after* the vanilla 20-leaf cost is
@@ -325,6 +327,8 @@ namespace BetterStacksF.Patches {
       }
 
       // maybe a field exists with the same name (unlikely but harmless)
+      // ReflectionHelper.GetFieldValueCached now keys by object + field name, so
+      // previous m_slots lookups do not poison the IngredientSlots lookup.
       try {
         var fallback = ReflectionHelper.GetFieldValueCached<object>(cauldron, "IngredientSlots", _cauldronSlotsCache);
         if (fallback != null) {

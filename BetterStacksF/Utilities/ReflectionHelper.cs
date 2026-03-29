@@ -23,9 +23,33 @@ namespace BetterStacksF.Utilities {
 
     /// <summary>
     /// Generic helper that uses a <see cref="ConditionalWeakTable"/> to cache
-    /// reflected <see cref="FieldInfo"/> lookups.  Caller supplies the cache
-    /// instance (often one per patch type) so that entries are freed when the
-    /// owning object is collected.
+    /// reflected <see cref="FieldInfo"/> lookups. Each object can have multiple
+    /// field names cached safely in a per-object inner dictionary.
+    /// </summary>
+    public static T? GetFieldValueCached<T>(object obj, string fieldName,
+                                             ConditionalWeakTable<object, Dictionary<string, FieldInfo?>> cache)
+    {
+        if (obj == null) return default;
+        try {
+            var map = cache.GetValue(obj, _ => new Dictionary<string, FieldInfo?>());
+            if (!map.TryGetValue(fieldName, out var fi)) {
+                fi = obj.GetType().GetField(fieldName, InstanceFlags);
+                map[fieldName] = fi;
+            }
+            if (fi == null) return default;
+            var value = fi.GetValue(obj);
+            return value is T t ? t : default;
+        }
+        catch (Exception ex) {
+            LoggingHelper.Error($"GetFieldValueCached<{typeof(T).Name}> failed for {fieldName}", ex);
+            return default;
+        }
+    }
+
+    /// <summary>
+    /// Compatibility overload for callers that supply a single-field cache; this
+    /// is less robust than the dictionary overload and should only be used when
+    /// fieldName is constant per cache.
     /// </summary>
     public static T? GetFieldValueCached<T>(object obj, string fieldName,
                                              ConditionalWeakTable<object, FieldInfo?> cache)

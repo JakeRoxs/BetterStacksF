@@ -48,9 +48,11 @@ namespace BetterStacksF.Patches {
         remaining -= chunk;
       }
 
-      if (insertedAny)
+      // Only skip the original AddCash when we've consumed the full amount.
+      if (insertedAny && remaining <= 0f)
         return false;
 
+      // Allow the original method to handle any leftover amount or overflow.
       return true;
     }
 

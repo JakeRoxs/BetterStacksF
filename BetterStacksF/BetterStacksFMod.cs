@@ -118,12 +118,14 @@ public class BetterStacksFMod : MelonMod {
     // driven via ProcessPendingUpdates.
     StackOverrideManager.ApplyStackOverrides(cfg);
 
-    // create the Steam adapter now; we'll poll for Steam readiness in
-    // OnUpdate and initialize it the first time the API is available.
+    // Initialize local adapter by default so host config/wiring works while
+    // Steam is still starting up. Switch to Steam once it is ready.
+    NetworkingManager.Initialize(new LocalNetworkAdapter());
+
     try {
       if (Type.GetType("SteamNetworkLib.SteamNetworkClient, SteamNetworkLib") != null) {
         _steamAdapter = new SteamNetworkAdapter();
-        NetworkingManager.Initialize(_steamAdapter);
+        LoggingHelper.Msg("SteamNetworkLib detected; deferring Steam adapter initialize until ready.");
       } else {
         LoggingHelper.Warning("SteamNetworkLib not available at runtime; using local adapter.");
         _steamAdapter = null;
@@ -566,6 +568,7 @@ public class BetterStacksFMod : MelonMod {
         _steamAdapter.Initialize();
         if (_steamAdapter.IsInitialized) {
           LoggingHelper.Init("SteamNetworkAdapter initialized.");
+          NetworkingManager.Initialize(_steamAdapter);
         } else {
           // initialization failed; don't give up yet.
           LoggingHelper.Msg("Steam adapter init failed, will retry");
