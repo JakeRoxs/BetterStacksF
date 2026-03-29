@@ -6,86 +6,120 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 project might one day adhere to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
 ### User-facing
 
-## [0.0.7] - 2026-03-01
+## [0.0.8] - 2026-03-29
+
 ### User-facing
+
+- Support S1 v0.4.4f10
+- Note: cauldron size adjustment and cash behavior features are still not functional and are pending final implementation.
+
+### Developer
+
+- Enhanced patching and logging mechanisms across cauldron, chemistry station, mixing station, lab oven, and drying rack patches.
+- Refactored reflection utilities and improved SteamNetworkAdapter diagnostics and error handling.
+- Refactored category handling and stack override manager code paths for better maintainability.
+
+## [0.0.7] - 2026-03-01
+
+### User-facing
+
 - Preserve user-provided values in cfg on startup
 
 ### Developer
+
 - Refactor configuration loading to optimize preference handling, reduce redundant disk reads, and resolve issues with default values overriding user-supplied values
 
 ## [0.0.6] - 2026-02-28
+
 ### User-facing
-- Added "Verbose logging" preference to control debug/info output.  Release builds default to disabled; DEBUG builds default to enabled.
+
+- Added "Verbose logging" preference to control debug/info output. Release builds default to disabled; DEBUG builds default to enabled.
 
 ### Developer
+
 - Implemented debounce mechanism for preference changes to optimize logging and reduce configuration update spam.
 - Refactored logging behaviour to reduce redundancy and improve clarity in configuration updates.
 - Enhanced preferences management with last-known state tracking and improved logging.
 - Removed redundant null check for `labOvenSpeed` in `PreferencesMapper`.
 
 ## [0.0.5] - 2026-02-28
+
 ### Developer
+
 - Renamed project/namespace from BetterStacks to BetterStacksF and cleaned up leftover files; updated packaging scripts and docs accordingly.
 
 ## [0.0.4] - 2026-02-28
+
 ### User-facing
+
 - Added speed options for the lab oven and chemistry station.
 - Patches now register more reliably and log failures more clearly.
 
 ### Developer
+
 - Refactored patch registration logic and enhanced logging output.
 
-
 ## [0.0.3] - 2026-02-24
+
 ### User-facing
+
 - Adjusted default values for mixing station and drying rack capacities (previously 1, now 3).
 
 ### Developer
+
 - Removed or quieted several UI tooltips on multiplier sliders.
 - Refactored startup and configuration logic into `ConfigManager`; helpers now live under `Utilities`.
 - Logging methods differentiate between verbose and standard messages.
 
 ### Bug Fixes
+
 - Drying rack capacity was not being enforced correctly; fixed.
 - Host-client enforcement logic for server-authoritative config was inverted.
 - Warn on missing default multipliers rather than crashing.
 
-
 ## [0.0.2] - 2026-02-24
+
 ### User-facing
-- Introduced adjustable cauldron cook speed.  The related ingredient-multiplier setting is currently a placeholder and has no effect on input/output stacks.
+
+- Introduced adjustable cauldron cook speed. The related ingredient-multiplier setting is currently a placeholder and has no effect on input/output stacks.
 - Configuration is stored in `BetterStacksF.cfg` under user data; visible in ModsApp.
 
 ### Developer
+
 - Added networking adapter and SteamNetworkLib integration for multiplayer settings propagation.
 - Migrated preferences to MelonPreferences; removed old JSON store.
 - Introduced `LoggingHelper` utility.
 - Added helper for locating user data directory and updated README.
 - Cleaned up reflection code calculating stack limits.
 
-
 ## [0.0.1] - 2026-02-21
+
 ### Notes
-- First commit after the fork.  The repository history stretches back into
-  the original BetterStacks project (see earlier commits in `git log`).  This
+
+- First commit after the fork. The repository history stretches back into
+  the original BetterStacks project (see earlier commits in `git log`). This
   entry doesn’t represent an independent BetterStacksF feature release; it
   simply records the state of the code when development began herein.
 
 ### User-facing
+
 - Baseline behaviour inherited from the original mod: increased stack sizes
   for all item categories and adjusted workstation capacities in Schedule I.
 
 ### Developer
+
 - Included an early logging refactor separating verbose and standard outputs
   and the initial migration to MelonPreferences.
 
-
-[Unreleased]: https://github.com/JakeRoxs/BetterStacksF/compare/v0.0.7...HEAD
+[Unreleased]: https://github.com/JakeRoxs/BetterStacksF/compare/v0.0.8...HEAD
+[0.0.8]: https://github.com/JakeRoxs/BetterStacksF/compare/v0.0.7...v0.0.8
 [0.0.7]: https://github.com/JakeRoxs/BetterStacksF/compare/v0.0.6...v0.0.7
 [0.0.6]: https://github.com/JakeRoxs/BetterStacksF/compare/v0.0.5...v0.0.6
 [0.0.4]: https://github.com/JakeRoxs/BetterStacksF/compare/v0.0.3...v0.0.4
 [0.0.3]: https://github.com/JakeRoxs/BetterStacksF/compare/v0.0.2...v0.0.3
 [0.0.2]: https://github.com/JakeRoxs/BetterStacksF/compare/v0.0.1...v0.0.2
 [0.0.1]: https://github.com/JakeRoxs/BetterStacksF/releases/tag/v0.0.1
+
