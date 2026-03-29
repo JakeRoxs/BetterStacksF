@@ -181,7 +181,8 @@ public class BetterStacksFMod : MelonMod {
     );
 
     // cash stacking multiplier: apply category-derived cash chunking and cash instance limits
-    {
+    // Disabled by default while feature is not functional and to prevent unsafe runtime patching.
+    if (false) {
       var npcInvType = AccessTools.TypeByName("Il2CppScheduleOne.NPCs.NPCInventory");
       if (npcInvType != null) {
         var addCashMethod = AccessTools.Method(npcInvType, "AddCash", new Type[] { typeof(float) });
@@ -240,7 +241,7 @@ public class BetterStacksFMod : MelonMod {
     }
 
     // cauldron: patch all StartCookOperation overloads
-    {
+    if (false) {
       var cauldronType = typeof(Cauldron);
       // also intercept UI open so we get slots before cooking starts
       var canvasType = AccessTools.TypeByName("Il2CppScheduleOne.UI.Stations.CauldronCanvas");
@@ -309,7 +310,6 @@ public class BetterStacksFMod : MelonMod {
       } else {
         LoggingHelper.Msg("UpdateIngredientVisuals method not found on Cauldron (skipping, may not exist in this build)");
       }
-    }
 
     // patch CauldronTask so we can capture ingredient state earlier in the
     // minigame while slots are still populated.  automated tasks invoke
@@ -328,7 +328,8 @@ public class BetterStacksFMod : MelonMod {
         LoggingHelper.Warning("CauldronTask type not found");
       }
     }
-
+    }
+    
     // chemistry station (ops + UI)
     {
       var chemType = typeof(Il2CppScheduleOne.ObjectScripts.ChemistryStation);
