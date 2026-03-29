@@ -12,7 +12,8 @@ project might one day adhere to [Semantic Versioning](https://semver.org/spec/v2
 ### User-facing
 
 - Support S1 v0.4.4f10
-- Note: cauldron size adjustment and cash behavior features are still not functional and are pending final implementation.
+- Note: cauldron size adjustment and cash behavior features are still not functional
+- Fix log spam when SteamNetworkLib is missing
 
 ### Developer
 
