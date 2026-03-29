@@ -6,8 +6,9 @@ namespace BetterStacksF.Config {
     public Dictionary<string, int> CategoryMultipliers { get; set; } = new Dictionary<string, int> {
       ["Product"] = 3,
       ["Packaging"] = 3,
-      ["Agriculture"] = 3,
-      ["Ingredient"] = 3
+      ["Growing"] = 3,
+      ["Ingredient"] = 3,
+      ["Storage"] = 1
     };
 
     // When true the host may assert authoritative control over this mod's config via HostConfig messages.

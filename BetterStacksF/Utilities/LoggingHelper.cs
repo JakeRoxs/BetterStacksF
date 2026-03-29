@@ -44,10 +44,11 @@ namespace BetterStacksF.Utilities {
     /// Messages are only emitted when <see cref="EnableVerbose"/> is true; the
     /// flag can be toggled at runtime to turn verbose logging on/off without a
     /// rebuild.
+    /// <para>Verbose/debug entries are prefixed with "[Debug]" for easier filtering.</para>
     /// </summary>
     public static void Msg(string msg) {
       if (EnableVerbose)
-        MelonLogger.Msg(SanitizeForLog(msg));
+        MelonLogger.Msg("[Debug] " + SanitizeForLog(msg));
     }
 
     /// <summary>

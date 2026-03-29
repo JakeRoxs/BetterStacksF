@@ -13,7 +13,6 @@ using Il2CppScheduleOne.ItemFramework;
 using MelonLoader;
 
 
-using S1API.Lifecycle;
 
 namespace BetterStacksF.Config {
   internal static class PreferencesMapper {
@@ -140,7 +139,13 @@ namespace BetterStacksF.Config {
           continue;
         }
 
-        // if duplicates arise after trimming, the later value wins
+        // normalize legacy category names to current names so old config survives.
+        if (key.Equals("Agriculture", StringComparison.OrdinalIgnoreCase))
+          key = "Growing";
+        else if (key.Equals("Storage", StringComparison.OrdinalIgnoreCase) || key.Equals("12", StringComparison.OrdinalIgnoreCase))
+          key = "Storage";
+
+        // if duplicates arise after trimming/normalization, the later value wins
         cleaned[key] = kv.Value;
       }
 

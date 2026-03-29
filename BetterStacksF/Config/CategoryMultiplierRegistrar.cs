@@ -4,11 +4,8 @@ using System.Linq;
 
 using BetterStacksF.Utilities;
 
-using Il2CppScheduleOne.ItemFramework;
-
 using MelonLoader;
 
-using S1API.Lifecycle;
 
 namespace BetterStacksF.Config {
   /// <summary>
@@ -25,9 +22,9 @@ namespace BetterStacksF.Config {
       if (present.Count == 0) {
         if (!_registrationScheduled) {
           _registrationScheduled = true;
-          GameLifecycle.OnPreLoad += () => {
+          S1ApiCompat.TrySubscribeToGameLifecycleEvent("OnPreLoad", () => {
             try { RegisterCategoryMultipliersFromGameDefs(); } catch { }
-          };
+          });
           // we deliberately do not log here; the general "item definitions not
           // ready" message from the stack override manager is sufficient and
           // avoids spamming the log when verbose logging is enabled.
@@ -103,16 +100,144 @@ namespace BetterStacksF.Config {
     }
 
     private static HashSet<string> GetPresentCategoryNames() {
+      if (!S1ApiCompat.IsAvailable) {
+        return new HashSet<string>();
+      }
+
       try {
         var defs = S1API.Items.ItemManager.GetAllItemDefinitions();
         if (defs == null || defs.Count == 0)
           return new HashSet<string>();
 
-        return defs.Select(d => ((EItemCategory)d.Category).ToString()).Distinct().ToHashSet();
+        bool verbose = LoggingHelper.EnableVerbose;
+
+        // instrument each definition with numeric category ID + string for debugging.
+        if (verbose) {
+          foreach (var def in defs) {
+            try {
+              var gameRawValue = GetRawCategoryName(def);
+              var numericCategory = GetRawCategoryNumericValue(def);
+
+              var s1apiValue = "<none>";
+              try {
+                s1apiValue = def.Category.ToString();
+              }
+              catch {
+                s1apiValue = "<s1api unavailable>";
+              }
+              // Show game-provided raw category via reflection/backing field and
+              // compare it to S1API layer output.
+              LoggingHelper.Msg($"Item category debug: {def.Name} (game-category='{gameRawValue}', s1api-category='{s1apiValue}', id={numericCategory}, resolved='{BetterStacksFMod.NormalizeCategoryKey(gameRawValue)}')");
+            }
+            catch (Exception ex) {
+              LoggingHelper.Warning($"Failed to log category for item {def.Name}: {ex.Message}");
+            }
+          }
+        }
+
+        var rawCategories = defs
+          .Select(d => GetRawCategoryName(d))
+          .Where(s => !string.IsNullOrWhiteSpace(s))
+          .Distinct()
+          .ToList();
+
+        if (verbose)
+          LoggingHelper.Msg($"Raw item categories from game defs: {string.Join(", ", rawCategories)}");
+
+        var present = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var categoryName in rawCategories) {
+          var normalizedName = BetterStacksFMod.NormalizeCategoryKey(categoryName);
+          if (!string.IsNullOrWhiteSpace(normalizedName)) {
+            present.Add(normalizedName);
+
+            if (verbose && !string.Equals(normalizedName, categoryName, StringComparison.OrdinalIgnoreCase))
+              LoggingHelper.Msg($"Mapped unknown raw category '{categoryName}' to '{normalizedName}'.");
+
+            continue;
+          }
+
+          if (Enum.TryParse<S1API.Items.ItemCategory>(categoryName, true, out var catValue)) {
+            if (Enum.IsDefined(typeof(S1API.Items.ItemCategory), catValue)) {
+              present.Add(categoryName);
+            } else if (verbose) {
+              LoggingHelper.Msg($"Skipping unknown numeric item category from game defs: '{categoryName}'");
+            }
+          } else if (verbose) {
+            LoggingHelper.Msg($"Skipping unknown item category from game defs: '{categoryName}'");
+          }
+        }
+
+        if (verbose)
+          LoggingHelper.Msg($"Valid item categories after enum filtering: {string.Join(", ", present)}");
+
+        return present;
       }
       catch {
         return new HashSet<string>();
       }
+    }
+
+    private static string GetRawCategoryName(S1API.Items.ItemDefinition def) {
+      if (def == null) return string.Empty;
+
+      try {
+        var categoryValue = def.Category; // S1API wrapper property
+        var s = categoryValue.ToString();
+        if (!string.IsNullOrWhiteSpace(s))
+          return s;
+      }
+      catch {
+        // ignore, fallback to reflection
+      }
+
+      try {
+        var field = def.GetType().GetField("category", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic);
+        var value = field?.GetValue(def);
+        if (value != null)
+          return value.ToString() ?? string.Empty;
+      }
+      catch {
+      }
+
+      try {
+        var prop = def.GetType().GetProperty("Category", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic);
+        var value = prop?.GetValue(def);
+        if (value != null)
+          return value.ToString() ?? string.Empty;
+      }
+      catch {
+      }
+
+      return string.Empty;
+    }
+
+    private static int GetRawCategoryNumericValue(S1API.Items.ItemDefinition def) {
+      if (def == null) return -1;
+      try {
+        return Convert.ToInt32(def.Category);
+      }
+      catch {
+      }
+
+      try {
+        var field = def.GetType().GetField("category", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic);
+        var value = field?.GetValue(def);
+        if (value != null && int.TryParse(value.ToString(), out var parsed))
+          return parsed;
+      }
+      catch {
+      }
+
+      try {
+        var prop = def.GetType().GetProperty("Category", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic);
+        var value = prop?.GetValue(def);
+        if (value != null && int.TryParse(value.ToString(), out var parsed))
+          return parsed;
+      }
+      catch {
+      }
+
+      return -1;
     }
   }
 }

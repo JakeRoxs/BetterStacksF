@@ -10,9 +10,14 @@ namespace BetterStacksF.Networking {
       if (adapter == null || !adapter.IsInitialized) return false;
       if (adapter.IsHost) return false; // local or host session
 
-      if (adapter is SteamNetworkAdapter steam) {
+      var adapterType = adapter.GetType();
+      if (string.Equals(adapterType.FullName, "BetterStacksF.Networking.SteamNetworkAdapter", StringComparison.Ordinal)) {
         try {
-          if (steam.IsInLobby && steam.LobbyMemberCount > 1 && !steam.IsHost)
+          var inLobby = adapterType.GetProperty("IsInLobby")?.GetValue(adapter) as bool?;
+          var memberCount = adapterType.GetProperty("LobbyMemberCount")?.GetValue(adapter) as int?;
+          var isHost = adapterType.GetProperty("IsHost")?.GetValue(adapter) as bool?;
+
+          if (inLobby == true && memberCount.GetValueOrDefault() > 1 && isHost == false)
             return true;
         }
         catch (System.Exception ex) {

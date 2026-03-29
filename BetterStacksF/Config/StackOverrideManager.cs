@@ -1,11 +1,8 @@
 using System;
-using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 
 using BetterStacksF.Utilities;
-
-using Il2CppScheduleOne.ItemFramework;
 
 using MelonLoader;
 
@@ -17,27 +14,30 @@ namespace BetterStacksF.Config {
   internal static class StackOverrideManager {
     private static Dictionary<string, int> _originalStackLimits = new Dictionary<string, int>();
     private static bool _originalsCaptured = false;
-    private static Dictionary<EItemCategory, int> _lastCategoryModifiers = new Dictionary<EItemCategory, int>();
+    private static Dictionary<S1API.Items.ItemCategory, int> _lastCategoryModifiers = new Dictionary<S1API.Items.ItemCategory, int>();
 
     // definitions added since last run that still need their original limit
     // persisted; categories are kept here so we can process them even when the
     // modifier is 1 and unchanged.
-    private static readonly HashSet<EItemCategory> _categoriesNeedingCapture =
-        new HashSet<EItemCategory>();
+    private static readonly HashSet<S1API.Items.ItemCategory> _categoriesNeedingCapture =
+        new HashSet<S1API.Items.ItemCategory>();
 
     // session cache of definitions that have a StackLimit, grouped by category.
     // the underlying list returned by ItemManager is stable after initial load,
     // so we only rebuild the cache when the total definition count changes.
     private static int _cachedDefCount = -1;
-    private static Dictionary<EItemCategory, List<S1API.Items.ItemDefinition>>
-        _stackablesByCategory = new Dictionary<EItemCategory, List<S1API.Items.ItemDefinition>>();
-    private static readonly ConcurrentDictionary<Type, bool> _typeHasStackLimitCache =
-        new ConcurrentDictionary<Type, bool>();
+    private static Dictionary<S1API.Items.ItemCategory, List<S1API.Items.ItemDefinition>>
+        _stackablesByCategory = new Dictionary<S1API.Items.ItemCategory, List<S1API.Items.ItemDefinition>>();
 
     /// <summary>
     /// Hooked at <see cref="S1API.Lifecycle.GameLifecycle.OnPreLoad"/> by the mod initializer.
     /// </summary>
     public static void ApplyStackOverrides(ModConfig cfg) {
+      if (!S1ApiCompat.IsAvailable) {
+        LoggingHelper.Msg("S1API not available; skipping stack override logic.");
+        return;
+      }
+
       // simplified stub for debugging syntax issues
       try {
         cfg ??= new ModConfig();
@@ -59,20 +59,20 @@ namespace BetterStacksF.Config {
         LoggingHelper.Msg($"Found {totalStackables} item definitions with StackLimit (cached) at ApplyStackOverrides");
 
 
-        var processedByCategory = new Dictionary<EItemCategory, int>();
-        var changedByCategory = new Dictionary<EItemCategory, int>();
-        var changedNamesByCategory = new Dictionary<EItemCategory, List<string>>();
+        var processedByCategory = new Dictionary<S1API.Items.ItemCategory, int>();
+        var changedByCategory = new Dictionary<S1API.Items.ItemCategory, int>();
+        var changedNamesByCategory = new Dictionary<S1API.Items.ItemCategory, List<string>>();
 
         bool capturedThisRun = false;
-        var currentModifiers = new Dictionary<EItemCategory, int>();
-        var capturedCategories = new HashSet<EItemCategory>();
+        var currentModifiers = new Dictionary<S1API.Items.ItemCategory, int>();
+        var capturedCategories = new HashSet<S1API.Items.ItemCategory>();
 
         // determine which categories we actually need to touch.  Categories make
         // the cut if any of the following are true:
         //   * modifier != 1
         //   * previous modifier != current modifier (handles revert-to-1 case)
         //   * there are unrecorded definitions in the category (new data)
-        var categoriesToProcess = new List<KeyValuePair<EItemCategory, List<S1API.Items.ItemDefinition>>>();
+        var categoriesToProcess = new List<KeyValuePair<S1API.Items.ItemCategory, List<S1API.Items.ItemDefinition>>>();
         foreach (var kv in _stackablesByCategory) {
           var category = kv.Key;
           int modifier = BetterStacksFMod.GetModifierForCategory(cfg, category);
@@ -101,9 +101,13 @@ namespace BetterStacksF.Config {
               continue;
             }
 
-            if (!ReflectionHelper.TryGetStackLimit(def, out int currentStack)) {
-              LoggingHelper.Warning($"Skipping {def.Name} ({defType.Name}) — unable to read StackLimit");
-              continue;
+            int currentStack;
+            try {
+                currentStack = def.StackLimit;
+            }
+            catch (Exception ex) {
+                LoggingHelper.Error($"Failed to read StackLimit for {def.Name} ({defType.Name})", ex);
+                continue; // skip this definition and keep processing others
             }
 
             if (!_originalStackLimits.ContainsKey(def.ID)) {
@@ -124,14 +128,14 @@ namespace BetterStacksF.Config {
                 if (_lastCategoryModifiers.TryGetValue(category, out var previousModifier))
                   prevCatMod = previousModifier;
 
-                currentModifiers.TryGetValue(category, out var currentMod);
+                int currentMod = modifier;
                 if (currentMod < 1) currentMod = 1;
 
                 if (prevCatMod != currentMod && prevCatMod > 0) {
                   int adjusted = Math.Max(1, (int)Math.Round(currentStack * ((double)currentMod / prevCatMod)));
                   LoggingHelper.Msg($"Adjusted newly-created {def.Name} ({category}) stack limit from {currentStack} to {adjusted} " +
                                   $"(oldMod={prevCatMod}, newMod={currentMod})");
-                  ReflectionHelper.TrySetStackLimit(def, adjusted);
+                  def.StackLimit = adjusted;
                   currentStack = adjusted;
                 }
 
@@ -168,8 +172,14 @@ namespace BetterStacksF.Config {
 
               LoggingHelper.Msg($"Set {def.Name} ({def.Category}) stack limit from {currentStack} to {newLimit}");
 
-              if (!ReflectionHelper.TrySetStackLimit(def, newLimit))
-                LoggingHelper.Warning($"Cannot set StackLimit on {def.Name} ({defType.Name}) — member is read-only.");
+              // set via wrapper property; should always succeed unless the
+              // underlying definition is somehow locked.
+              try {
+                def.StackLimit = newLimit;
+              }
+              catch (Exception ex) {
+                LoggingHelper.Error($"Cannot set StackLimit on {def.Name} ({defType.Name})", ex);
+              }
             }
           }
         }
@@ -202,23 +212,15 @@ namespace BetterStacksF.Config {
         LoggingHelper.Error("ApplyStackOverrides failed", ex);
       }
     }
-    private static bool TypeHasStackLimit(Type t) {
-      // ConcurrentDictionary handles the thread‑safe check/insert for us.  The
-      // factory delegate will only be invoked once per key even if multiple
-      // threads race to populate it.
-      return _typeHasStackLimitCache.GetOrAdd(t, ReflectionHelper.HasStackLimit);
-    }
 
     private static void EnsureStackableCache(List<S1API.Items.ItemDefinition> allDefs) {
       if (allDefs.Count == _cachedDefCount)
         return;
 
-      // if the caller has added a bunch of new defs of types we've seen
-      // before, the type cache avoids repeated reflection; if new types appear
-      // we'll populate the cache as we go.
+      // every item definition has a stack limit, so we can skip the slower
+      // type inspection step entirely – just group them by category.
       _stackablesByCategory = allDefs
-          .Where(d => TypeHasStackLimit(d.GetType()))
-          .GroupBy(d => (EItemCategory)d.Category)
+          .GroupBy(d => d.Category)
           .ToDictionary(g => g.Key, g => g.ToList());
 
       _cachedDefCount = allDefs.Count;
@@ -242,25 +244,43 @@ namespace BetterStacksF.Config {
 
     private static void LogDebugDiagnostics(List<S1API.Items.ItemDefinition> allDefs, ModConfig cfg) {
       if (!LoggingHelper.EnableVerbose) return;
-      var categoryCounts = allDefs.GroupBy(d => (EItemCategory)d.Category).ToDictionary(g => g.Key, g => g.Count());
+      var categoryCounts = allDefs.GroupBy(d => d.Category).ToDictionary(g => g.Key, g => g.Count());
       LoggingHelper.Msg($"ItemManager total definitions={allDefs.Count}, categories present={string.Join(", ", categoryCounts.Select(kv => kv.Key + "=" + kv.Value))}");
-      var presentNames = categoryCounts.Keys.Select(k => k.ToString()).ToHashSet(StringComparer.OrdinalIgnoreCase);
-      var bakedDefaults = new[] { "Product", "Packaging", "Agriculture", "Ingredient" };
+      var presentNames = categoryCounts.Keys
+        .Select(k => BetterStacksFMod.NormalizeCategoryKey(k.ToString()))
+        .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+      var bakedDefaults = new[] { "Product", "Packaging", "Growing", "Ingredient", "Storage" };
       var missingDefaults = bakedDefaults.Where(d => !presentNames.Contains(d)).ToList();
       if (missingDefaults.Count > 0) {
         LoggingHelper.Warning($"Default CategoryMultiplier keys not found in game item categories: {string.Join(", ", missingDefaults)}");
       }
 
       var diagnosticNames = cfg?.CategoryMultipliers?.Keys?.ToList() ?? new List<string>();
-      var diagnosticCategories = new List<EItemCategory>();
-      foreach (var name in diagnosticNames)
-        if (Enum.TryParse<EItemCategory>(name, out var parsed))
+      var diagnosticCategories = new List<S1API.Items.ItemCategory>();
+      foreach (var name in diagnosticNames) {
+        var normalized = BetterStacksFMod.NormalizeCategoryKey(name);
+        if (Enum.TryParse<S1API.Items.ItemCategory>(normalized, ignoreCase: true, out var parsed)) {
           diagnosticCategories.Add(parsed);
+          continue;
+        }
+
+        if (string.Equals(normalized, "Storage", StringComparison.OrdinalIgnoreCase)) {
+          // S1API may represent this internally as a numeric enum value (12) without a name.
+          diagnosticCategories.Add((S1API.Items.ItemCategory)12);
+          continue;
+        }
+
+        if (Enum.TryParse<S1API.Items.ItemCategory>(name, ignoreCase: true, out var parsedRaw)) {
+          diagnosticCategories.Add(parsedRaw);
+        }
+      }
+
       if (diagnosticCategories.Count == 0)
-        diagnosticCategories = new List<EItemCategory> { EItemCategory.Product, EItemCategory.Packaging, EItemCategory.Cash };
+        diagnosticCategories = new List<S1API.Items.ItemCategory> { S1API.Items.ItemCategory.Product, S1API.Items.ItemCategory.Packaging, S1API.Items.ItemCategory.Cash };
 
       foreach (var cat in diagnosticCategories) {
-        var matches = allDefs.Where(d => (EItemCategory)d.Category == cat).ToList();
+        var matches = allDefs.Where(d => d.Category == cat).ToList();
         if (matches.Count == 0)
           LoggingHelper.Msg($"Diagnostic: no definitions found with category {cat}");
         else {
