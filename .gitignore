@@ -373,9 +373,11 @@ dist/
 tools/
 workspaces/
 
-# Ignore Docs
+# Ignore Docs and other non-code files
 docs/
 .github/skills/
+.github/agents/
 copilot-instructions.md
 AGENTS.md
 todos/
+.vscode/

@@ -40,6 +40,10 @@
     <Reference Include="Il2CppInterop.Runtime">
       <HintPath>$(ScheduleRoot)\MelonLoader\net6\Il2CppInterop.Runtime.dll</HintPath>
     </Reference>
+    <Reference Include="Il2CppScheduleOne.Core">
+      <HintPath>$(ScheduleRoot)\MelonLoader\Il2CppAssemblies\Il2CppScheduleOne.Core.dll</HintPath>
+      <Private>True</Private>
+    </Reference>
     <Reference Include="Il2Cppmscorlib">
       <HintPath>$(ScheduleRoot)\MelonLoader\Il2CppAssemblies\Il2Cppmscorlib.dll</HintPath>
     </Reference>

@@ -56,10 +56,10 @@ namespace BetterStacksF.Networking {
         // becomes fully ready.  log a verbose/informational message instead
         // of a warning so startup isn't cluttered when Steam is just slow.
         bool isSteamNotReady = initEx.Message.Contains("Steamworks is not initialized");
-        if (!isSteamNotReady || LoggingHelper.EnableVerbose) {
-          LoggingHelper.Warning($"[SteamNetworkAdapter] Initialize failed: {initEx.Message}");
+        if (isSteamNotReady) {
+          LoggingHelper.Msg("[SteamNetworkAdapter] initialization deferred (Steamworks not ready, retrying shortly)");
         } else {
-          LoggingHelper.Msg("[SteamNetworkAdapter] initialization deferred (Steam not ready)");
+          LoggingHelper.Warning($"[SteamNetworkAdapter] Initialize failed: {initEx.Message}");
         }
         try { _client?.Dispose(); } catch { }
         _client = null;
