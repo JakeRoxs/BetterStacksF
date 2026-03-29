@@ -33,6 +33,10 @@ public class BetterStacksFMod : MelonMod {
   // `OnPreferencesSaved` fires.
   private ModConfig? _lastPrefs;
 
+  // backoff state for Steam adapter initialization retries
+  private static DateTime _lastSteamInitAttempt = DateTime.MinValue;
+  private static int _steamInitFailures = 0;
+
   // once created we hold a reference so update ticks can drive initialization
   // when SteamNetworkLib becomes ready.
   private SteamNetworkAdapter? _steamAdapter;
@@ -173,6 +177,7 @@ public class BetterStacksFMod : MelonMod {
         AccessTools.Method(typeof(MixingStation), "Start"),
         prefix: new HarmonyMethod(typeof(MixingStationPatches), nameof(MixingStationPatches.PatchMixingStationCapacity))
     );
+    LoggingHelper.Msg("Patched MixingStation.Start for capacity scaling");
 
     // drying rack capacity
     harmony.Patch(
@@ -329,7 +334,7 @@ public class BetterStacksFMod : MelonMod {
       }
     }
     }
-    
+
     // chemistry station (ops + UI)
     {
       var chemType = typeof(Il2CppScheduleOne.ObjectScripts.ChemistryStation);
@@ -565,14 +570,31 @@ public class BetterStacksFMod : MelonMod {
       }
 
       if (steamReady) {
+        // retry backoff: don't hammer init on every frame (allow 5s between attempts)
+        var now = DateTime.UtcNow;
+        if ((now - _lastSteamInitAttempt).TotalSeconds < 5 && _steamInitFailures > 0) {
+          return;
+        }
+
+        _lastSteamInitAttempt = now;
+
         LoggingHelper.Msg("Steam ready, trying adapter init");
         _steamAdapter.Initialize();
         if (_steamAdapter.IsInitialized) {
           LoggingHelper.Init("SteamNetworkAdapter initialized.");
+          _steamInitFailures = 0;
+          NetworkingManager.Shutdown();
           NetworkingManager.Initialize(_steamAdapter);
+
+          // After switching to the Steam adapter, rebroadcast active host config
+          // so connected clients can get the authoritative settings via lobby data.
+          if (NetworkingManager.CurrentAdapter?.IsHost ?? false) {
+            NetworkingManager.BroadcastHostConfig(new HostConfig { Config = ConfigManager.CurrentConfig });
+          }
         } else {
+          _steamInitFailures++;
           // initialization failed; don't give up yet.
-          LoggingHelper.Msg("Steam adapter init failed, will retry");
+          LoggingHelper.Msg($"Steam adapter init failed, will retry (attempt {_steamInitFailures})");
         }
       } else {
         // Steam not running yet or library missing

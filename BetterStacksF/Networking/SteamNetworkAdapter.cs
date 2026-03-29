@@ -49,7 +49,7 @@ namespace BetterStacksF.Networking {
         _client = new SteamNetworkClient();
         _client.Initialize();
         IsInitialized = true;
-        LoggingHelper.Init("[SteamNetworkAdapter] typed adapter initialized");
+        LoggingHelper.Msg("[SteamNetworkAdapter] typed adapter initialized");
       }
       catch (Exception initEx) {
         // failures during early initialization are expected until Steamworks
@@ -95,8 +95,13 @@ namespace BetterStacksF.Networking {
         }
       }
       catch (Exception ex) {
-        // Mark the adapter as not initialized to prevent log spam and repeated failures.
+        // Mark the adapter as not initialized and dispose the dead client to avoid leaks.
         IsInitialized = false;
+        try {
+          _client?.Dispose();
+        }
+        catch { }
+        _client = null;
         LoggingHelper.Warning($"[SteamNetworkAdapter] ProcessIncomingMessages error: {ex.Message}");
       }
 

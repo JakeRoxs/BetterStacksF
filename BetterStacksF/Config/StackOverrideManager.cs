@@ -128,7 +128,7 @@ namespace BetterStacksF.Config {
                 if (_lastCategoryModifiers.TryGetValue(category, out var previousModifier))
                   prevCatMod = previousModifier;
 
-                currentModifiers.TryGetValue(category, out var currentMod);
+                int currentMod = modifier;
                 if (currentMod < 1) currentMod = 1;
 
                 if (prevCatMod != currentMod && prevCatMod > 0) {

@@ -7,8 +7,6 @@ project might one day adhere to [Semantic Versioning](https://semver.org/spec/v2
 
 ## [Unreleased]
 
-### User-facing
-
 ## [0.0.8] - 2026-03-29
 
 ### User-facing

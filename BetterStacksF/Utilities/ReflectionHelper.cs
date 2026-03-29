@@ -24,14 +24,14 @@ namespace BetterStacksF.Utilities {
     /// <summary>
     /// Generic helper that uses a <see cref="ConditionalWeakTable"/> to cache
     /// reflected <see cref="FieldInfo"/> lookups. Each object can have multiple
-    /// field names cached safely in a per-object inner dictionary.
+    /// field names cached safely in a per-object inner map.
     /// </summary>
     public static T? GetFieldValueCached<T>(object obj, string fieldName,
-                                             ConditionalWeakTable<object, Dictionary<string, FieldInfo?>> cache)
+                                             ConditionalWeakTable<object, ConcurrentDictionary<string, FieldInfo?>> cache)
     {
         if (obj == null) return default;
         try {
-            var map = cache.GetValue(obj, _ => new Dictionary<string, FieldInfo?>());
+            var map = cache.GetValue(obj, _ => new ConcurrentDictionary<string, FieldInfo?>());
             if (!map.TryGetValue(fieldName, out var fi)) {
                 fi = obj.GetType().GetField(fieldName, InstanceFlags);
                 map[fieldName] = fi;

@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.Linq;
 using System.Reflection;
 using System.Runtime.CompilerServices;
@@ -134,10 +135,10 @@ namespace BetterStacksF.Patches {
     // development via <see cref="LoggingHelper.EnableVerbose"/> to inspect
     // the shape of the dynamic objects we receive from the game.
 
-    private static readonly ConditionalWeakTable<object, Dictionary<string, FieldInfo?>> _cauldronFieldCache
-        = new ConditionalWeakTable<object, Dictionary<string, FieldInfo?>>();
-    private static readonly ConditionalWeakTable<object, Dictionary<string, FieldInfo?>> _cauldronSlotsCache
-        = new ConditionalWeakTable<object, Dictionary<string, FieldInfo?>>();
+    private static readonly ConditionalWeakTable<object, ConcurrentDictionary<string, FieldInfo?>> _cauldronFieldCache
+        = new ConditionalWeakTable<object, ConcurrentDictionary<string, FieldInfo?>>();
+    private static readonly ConditionalWeakTable<object, ConcurrentDictionary<string, FieldInfo?>> _cauldronSlotsCache
+        = new ConditionalWeakTable<object, ConcurrentDictionary<string, FieldInfo?>>();
     // cache the two most recent slot-count snapshots produced by
     // UpdateIngredientVisuals.  We need both the current and the previous
     // values because the UI update can fire *after* the vanilla 20-leaf cost is
